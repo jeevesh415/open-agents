@@ -2,6 +2,13 @@ import { tool } from "ai";
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
+import type { AgentContext } from "../../types";
+
+function isPathWithinDirectory(filePath: string, directory: string): boolean {
+  const resolvedPath = path.resolve(filePath);
+  const resolvedDir = path.resolve(directory);
+  return resolvedPath.startsWith(resolvedDir + path.sep) || resolvedPath === resolvedDir;
+}
 
 export const writeFileTool = tool({
   description: `Write content to a file on the filesystem.
@@ -20,11 +27,22 @@ IMPORTANT:
     filePath: z.string().describe("Absolute path to the file to write"),
     content: z.string().describe("Content to write to the file"),
   }),
-  execute: async ({ filePath, content }) => {
+  execute: async ({ filePath, content }, { experimental_context }) => {
+    const context = experimental_context as AgentContext;
+    const workingDirectory = context?.workingDirectory ?? process.cwd();
+
     try {
       const absolutePath = path.isAbsolute(filePath)
         ? filePath
-        : path.resolve(filePath);
+        : path.resolve(workingDirectory, filePath);
+
+      // Security check: ensure path is within working directory
+      if (!isPathWithinDirectory(absolutePath, workingDirectory)) {
+        return {
+          success: false,
+          error: `Access denied: path "${absolutePath}" is outside the working directory "${workingDirectory}"`,
+        };
+      }
 
       const dir = path.dirname(absolutePath);
       await fs.mkdir(dir, { recursive: true });
@@ -71,7 +89,10 @@ IMPORTANT:
       .optional()
       .describe("Replace all occurrences. Default: false"),
   }),
-  execute: async ({ filePath, oldString, newString, replaceAll = false }) => {
+  execute: async ({ filePath, oldString, newString, replaceAll = false }, { experimental_context }) => {
+    const context = experimental_context as AgentContext;
+    const workingDirectory = context?.workingDirectory ?? process.cwd();
+
     try {
       if (oldString === newString) {
         return {
@@ -82,7 +103,15 @@ IMPORTANT:
 
       const absolutePath = path.isAbsolute(filePath)
         ? filePath
-        : path.resolve(filePath);
+        : path.resolve(workingDirectory, filePath);
+
+      // Security check: ensure path is within working directory
+      if (!isPathWithinDirectory(absolutePath, workingDirectory)) {
+        return {
+          success: false,
+          error: `Access denied: path "${absolutePath}" is outside the working directory "${workingDirectory}"`,
+        };
+      }
 
       const content = await fs.readFile(absolutePath, "utf-8");
 

@@ -1,7 +1,14 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { spawn } from "child_process";
+import * as path from "path";
 import type { AgentContext } from "../../types";
+
+function isPathWithinDirectory(filePath: string, directory: string): boolean {
+  const resolvedPath = path.resolve(filePath);
+  const resolvedDir = path.resolve(directory);
+  return resolvedPath.startsWith(resolvedDir + path.sep) || resolvedPath === resolvedDir;
+}
 
 const TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_LENGTH = 50_000;
@@ -100,7 +107,22 @@ IMPORTANT:
   }),
   execute: async ({ command, cwd }, { experimental_context }) => {
     const context = experimental_context as AgentContext;
-    const workingDir = cwd ?? context.workingDirectory ?? process.cwd();
+    const workingDirectory = context?.workingDirectory ?? process.cwd();
+
+    // Resolve the working directory
+    const workingDir = cwd
+      ? (path.isAbsolute(cwd) ? cwd : path.resolve(workingDirectory, cwd))
+      : workingDirectory;
+
+    // Security check: ensure cwd is within working directory
+    if (!isPathWithinDirectory(workingDir, workingDirectory)) {
+      return {
+        success: false,
+        exitCode: null,
+        stdout: "",
+        stderr: `Access denied: cwd "${workingDir}" is outside the working directory "${workingDirectory}"`,
+      };
+    }
 
     const result = await executeCommand(command, workingDir, TIMEOUT_MS);
 

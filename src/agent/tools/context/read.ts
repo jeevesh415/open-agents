@@ -2,6 +2,13 @@ import { tool } from "ai";
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
+import type { AgentContext } from "../../types";
+
+function isPathWithinDirectory(filePath: string, directory: string): boolean {
+  const resolvedPath = path.resolve(filePath);
+  const resolvedDir = path.resolve(directory);
+  return resolvedPath.startsWith(resolvedDir + path.sep) || resolvedPath === resolvedDir;
+}
 
 export const readFileTool = tool({
   description: `Read a file from the filesystem or scratchpad.
@@ -32,7 +39,10 @@ IMPORTANT:
       .optional()
       .describe("Maximum number of lines to read. Default: 2000"),
   }),
-  execute: async ({ filePath, offset = 1, limit = 2000 }) => {
+  execute: async ({ filePath, offset = 1, limit = 2000 }, { experimental_context }) => {
+    const context = experimental_context as AgentContext;
+    const workingDirectory = context?.workingDirectory ?? process.cwd();
+
     try {
       if (filePath.startsWith("/scratchpad/")) {
         return {
@@ -42,13 +52,16 @@ IMPORTANT:
         };
       }
 
-      // Resolve the path - handle relative paths and root-relative paths like /README.md
-      let absolutePath = path.isAbsolute(filePath)
-        ? filePath
-        : path.resolve(filePath);
+      // Resolve the path relative to working directory
+      let absolutePath: string;
+      if (path.isAbsolute(filePath)) {
+        absolutePath = filePath;
+      } else {
+        absolutePath = path.resolve(workingDirectory, filePath);
+      }
 
       // If the path doesn't exist and looks like a root-relative path (e.g., /README.md),
-      // try resolving it relative to the current working directory
+      // try resolving it relative to the working directory
       try {
         await fs.access(absolutePath);
       } catch {
@@ -58,7 +71,7 @@ IMPORTANT:
           !filePath.startsWith("/Users/") &&
           !filePath.startsWith("/home/")
         ) {
-          const workspaceRelativePath = path.join(process.cwd(), filePath);
+          const workspaceRelativePath = path.join(workingDirectory, filePath);
           try {
             await fs.access(workspaceRelativePath);
             absolutePath = workspaceRelativePath;
@@ -66,6 +79,14 @@ IMPORTANT:
             // Neither path exists - let it fall through to the original error handling
           }
         }
+      }
+
+      // Security check: ensure path is within working directory
+      if (!isPathWithinDirectory(absolutePath, workingDirectory)) {
+        return {
+          success: false,
+          error: `Access denied: path "${absolutePath}" is outside the working directory "${workingDirectory}"`,
+        };
       }
 
       const stats = await fs.stat(absolutePath);

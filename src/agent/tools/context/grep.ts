@@ -2,6 +2,13 @@ import { tool } from "ai";
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
+import type { AgentContext } from "../../types";
+
+function isPathWithinDirectory(filePath: string, directory: string): boolean {
+  const resolvedPath = path.resolve(filePath);
+  const resolvedDir = path.resolve(directory);
+  return resolvedPath.startsWith(resolvedDir + path.sep) || resolvedPath === resolvedDir;
+}
 
 interface GrepMatch {
   file: string;
@@ -108,14 +115,25 @@ IMPORTANT:
     path: searchPath,
     glob,
     caseSensitive = true,
-  }) => {
+  }, { experimental_context }) => {
+    const context = experimental_context as AgentContext;
+    const workingDirectory = context?.workingDirectory ?? process.cwd();
+
     try {
       const flags = caseSensitive ? "g" : "gi";
       const regex = new RegExp(pattern, flags);
 
       const absolutePath = path.isAbsolute(searchPath)
         ? searchPath
-        : path.resolve(searchPath);
+        : path.resolve(workingDirectory, searchPath);
+
+      // Security check: ensure path is within working directory
+      if (!isPathWithinDirectory(absolutePath, workingDirectory)) {
+        return {
+          success: false,
+          error: `Access denied: path "${absolutePath}" is outside the working directory "${workingDirectory}"`,
+        };
+      }
 
       const stats = await fs.stat(absolutePath);
       let files: string[];

@@ -2,6 +2,13 @@ import { tool } from "ai";
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
+import type { AgentContext } from "../../types";
+
+function isPathWithinDirectory(filePath: string, directory: string): boolean {
+  const resolvedPath = path.resolve(filePath);
+  const resolvedDir = path.resolve(directory);
+  return resolvedPath.startsWith(resolvedDir + path.sep) || resolvedPath === resolvedDir;
+}
 
 interface FileInfo {
   path: string;
@@ -111,13 +118,28 @@ EXAMPLES:
       .optional()
       .describe("Maximum number of results. Default: 100"),
   }),
-  execute: async ({ pattern, path: basePath, limit = 100 }) => {
+  execute: async ({ pattern, path: basePath, limit = 100 }, { experimental_context }) => {
+    const context = experimental_context as AgentContext;
+    const workingDirectory = context?.workingDirectory ?? process.cwd();
+
     try {
-      const searchDir = basePath
-        ? path.isAbsolute(basePath)
+      // Resolve search directory relative to working directory
+      let searchDir: string;
+      if (basePath) {
+        searchDir = path.isAbsolute(basePath)
           ? basePath
-          : path.resolve(basePath)
-        : process.cwd();
+          : path.resolve(workingDirectory, basePath);
+      } else {
+        searchDir = workingDirectory;
+      }
+
+      // Security check: ensure search directory is within working directory
+      if (!isPathWithinDirectory(searchDir, workingDirectory)) {
+        return {
+          success: false,
+          error: `Access denied: path "${searchDir}" is outside the working directory "${workingDirectory}"`,
+        };
+      }
 
       const files = await findFiles(searchDir, pattern, limit);
 
