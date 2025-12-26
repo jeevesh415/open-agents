@@ -36,7 +36,7 @@ const callOptionsSchema = z.object({
 export type DeepAgentCallOptions = z.infer<typeof callOptionsSchema>;
 
 export const deepAgent = new ToolLoopAgent({
-  model: "anthropic/claude-sonnet-4-20250514",
+  model: "anthropic/claude-haiku-4.5",
   instructions: buildSystemPrompt({}),
   tools: {
     todo_write: todoWriteTool,
