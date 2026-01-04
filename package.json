@@ -1,5 +1,5 @@
 {
-  "name": "cc-clone-ai-sdk",
+  "name": "open-harness",
   "module": "src/index.ts",
   "type": "module",
   "private": true,

@@ -35,7 +35,7 @@ async function main() {
       initialPrompt,
       workingDirectory,
       header: {
-        name: "Open Claude Code",
+        name: "Open Harness",
         version: "0.1.0",
       },
     });

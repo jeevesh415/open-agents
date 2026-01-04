@@ -1,4 +1,4 @@
-# cc-clone-ai-sdk
+# Open Harness
 
 To install dependencies:
 
