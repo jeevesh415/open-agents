@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Text } from "ink";
 import { getToolName, isToolUIPart } from "ai";
-import type { TaskToolUIPart } from "../../agent/tools/task";
+import type { TaskToolUIPart, SubagentUIMessage } from "@open-harness/agent";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -99,6 +99,19 @@ function countTaskTools(part: TaskToolUIPart): number {
   return message.parts.filter(isToolUIPart).length;
 }
 
+function getTaskTokens(part: TaskToolUIPart): number | null {
+  if (part.state !== "output-available") return null;
+  const message = part.output;
+  return message?.metadata?.inputTokens ?? null;
+}
+
+function formatTokens(tokens: number): string {
+  if (tokens >= 1000) {
+    return `${(tokens / 1000).toFixed(1)}k`;
+  }
+  return tokens.toString();
+}
+
 function getLastToolInfo(
   part: TaskToolUIPart,
 ): { name: string; summary: string } | null {
@@ -163,6 +176,7 @@ function TaskItem({
   const isRunning = status === "running" || status === "pending";
   const elapsedSeconds = useTaskTiming(isRunning);
   const toolCount = countTaskTools(part);
+  const tokenCount = getTaskTokens(part);
   const lastTool = getLastToolInfo(part);
 
   const desc = part.input?.task ?? "Task";
@@ -213,6 +227,7 @@ function TaskItem({
         <Text color="gray">
           {" "}
           - {toolCount} tool{toolCount !== 1 ? "s" : ""}
+          {tokenCount !== null && ` - ${formatTokens(tokenCount)} tokens`}
         </Text>
         {approvalRequested && <Text color="yellow"> [NEEDS APPROVAL]</Text>}
         {isRunning && elapsedSeconds > 0 && (

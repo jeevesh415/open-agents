@@ -4,6 +4,13 @@ import { getToolName, isTextUIPart, isToolUIPart } from "ai";
 import type { ToolRendererProps } from "../../lib/render-tool";
 import { ToolSpinner } from "./shared";
 
+function formatTokens(tokens: number): string {
+  if (tokens >= 1000) {
+    return `${(tokens / 1000).toFixed(1)}k`;
+  }
+  return tokens.toString();
+}
+
 /**
  * Simplified tool call renderer for subagent tool parts.
  * Uses a looser type since these come from a different agent's tool set.
@@ -174,7 +181,13 @@ export function TaskRenderer({ part, state }: ToolRendererProps<"tool-task">) {
       {isComplete && (
         <Box paddingLeft={2}>
           <Text color="gray">└ </Text>
-          <Text color="white">Complete ({toolParts.length} tool calls)</Text>
+          <Text color="white">
+            Complete ({toolParts.length} tool calls
+            {(() => {
+              const inputTokens = message?.metadata?.inputTokens;
+              return inputTokens ? `, ${formatTokens(inputTokens)} tokens` : "";
+            })()})
+          </Text>
         </Box>
       )}
 

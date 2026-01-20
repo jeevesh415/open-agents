@@ -2,6 +2,7 @@ import { tool, readUIMessageStream, type UIToolInvocation } from "ai";
 import { z } from "zod";
 import { explorerSubagent } from "../subagents/explorer";
 import { executorSubagent } from "../subagents/executor";
+import type { SubagentUIMessage } from "../subagents/types";
 import { getSandbox, getApprovalContext, shouldAutoApprove } from "./utils";
 import type { ApprovalRule } from "../types";
 
@@ -131,8 +132,14 @@ NOTE: The executor subagent requires user approval before running because it has
       abortSignal,
     });
 
-    for await (const message of readUIMessageStream({
-      stream: result.toUIMessageStream(),
+    for await (const message of readUIMessageStream<SubagentUIMessage>({
+      stream: result.toUIMessageStream<SubagentUIMessage>({
+        messageMetadata: ({ part }) => {
+          if (part.type === "finish-step") {
+            return { inputTokens: part.usage?.inputTokens };
+          }
+        },
+      }),
     })) {
       yield message;
     }

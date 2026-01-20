@@ -39,6 +39,19 @@ function countTaskTools(part: TaskToolUIPart): number {
   return message.parts.filter(isToolUIPart).length;
 }
 
+function getTaskTokens(part: TaskToolUIPart): number | null {
+  if (part.state !== "output-available") return null;
+  const message = part.output;
+  return message?.metadata?.inputTokens ?? null;
+}
+
+function formatTokens(tokens: number): string {
+  if (tokens >= 1000) {
+    return `${(tokens / 1000).toFixed(1)}k`;
+  }
+  return tokens.toString();
+}
+
 function getLastToolInfo(
   part: TaskToolUIPart,
 ): { name: string; summary: string } | null {
@@ -149,6 +162,7 @@ function TaskItem({
   const isRunning = status === "running" || status === "pending";
   const elapsedSeconds = useTaskTiming(isRunning);
   const toolCount = countTaskTools(part);
+  const tokenCount = getTaskTokens(part);
   const lastTool = getLastToolInfo(part);
 
   const desc = part.input?.task ?? "Task";
@@ -208,6 +222,7 @@ function TaskItem({
           </span>
           <span className="text-xs text-muted-foreground">
             - {toolCount} tool{toolCount !== 1 ? "s" : ""}
+            {tokenCount !== null && ` - ${formatTokens(tokenCount)} tokens`}
           </span>
           {approvalRequested && (
             <span className="text-xs text-yellow-500">[NEEDS APPROVAL]</span>
