@@ -11,7 +11,7 @@ import { defaultModelLabel } from "@open-harness/agent";
 import { createDefaultAgentOptions } from "./config";
 import type { TUIOptions } from "./types";
 
-export type { TUIOptions, AutoAcceptMode, Settings } from "./types";
+export type { TUIOptions, PermissionMode, Settings } from "./types";
 export { useChatContext, ChatProvider } from "./chat-context";
 export { tuiAgent, createDefaultAgentOptions } from "./config";
 export { loadSettings, saveSettings } from "./lib/settings";
@@ -70,7 +70,7 @@ export async function createTUI(options: TUIOptions): Promise<void> {
       agentOptions={agentOptions}
       model={options.header?.model ?? defaultModelLabel}
       workingDirectory={workingDirectory}
-      initialAutoAcceptMode={options.initialAutoAcceptMode}
+      initialPermissionMode={options.initialPermissionMode}
       initialSettings={options.initialSettings}
       onSettingsChange={options.onSettingsChange}
       availableModels={options.availableModels}
@@ -112,7 +112,7 @@ export function renderTUI(options: TUIOptions) {
       agentOptions={agentOptions}
       model={options.header?.model ?? defaultModelLabel}
       workingDirectory={workingDirectory}
-      initialAutoAcceptMode={options.initialAutoAcceptMode}
+      initialPermissionMode={options.initialPermissionMode}
       initialSettings={options.initialSettings}
       onSettingsChange={options.onSettingsChange}
       availableModels={options.availableModels}

@@ -29,7 +29,7 @@ export function WriteRenderer({
       : undefined;
 
   // Hide preview in plan mode
-  const isPlanMode = chatState.agentMode === "plan";
+  const isPlanMode = chatState.permissionMode === "plan";
 
   // Merge output error into state
   const mergedState = outputError

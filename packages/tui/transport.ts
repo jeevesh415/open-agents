@@ -10,10 +10,9 @@ import type {
   TUIAgent,
   TUIAgentCallOptions,
   TUIAgentUIMessage,
-  AutoAcceptMode,
+  PermissionMode,
   ApprovalRule,
 } from "./types";
-import type { AgentMode } from "@open-harness/agent";
 import type { Settings } from "./lib/settings";
 import { getModelById } from "./lib/models";
 import { createSession, saveSession } from "./lib/session-storage";
@@ -28,27 +27,28 @@ export type PersistenceConfig = {
 export type AgentTransportOptions = {
   agent: TUIAgent;
   agentOptions: TUIAgentCallOptions;
-  getAutoApprove?: () => AutoAcceptMode;
+  getPermissionMode?: () => PermissionMode;
   getApprovalRules?: () => ApprovalRule[];
   getSettings?: () => Settings;
-  getAgentMode?: () => AgentMode;
   getPlanFilePath?: () => string | null;
   onUsageUpdate?: (usage: LanguageModelUsage) => void;
-  onAgentModeChange?: (mode: AgentMode, planFilePath?: string) => void;
+  onPermissionModeChange?: (
+    mode: PermissionMode,
+    planFilePath?: string,
+  ) => void;
   persistence?: PersistenceConfig;
 };
 
 export function createAgentTransport({
   agent,
   agentOptions,
-  getAutoApprove,
+  getPermissionMode,
   getApprovalRules,
   getSettings,
-  getAgentMode,
   getPlanFilePath,
   onUsageUpdate,
   // TODO: Implement mode change handling when enter_plan_mode/exit_plan_mode results are processed
-  onAgentModeChange: _onAgentModeChange,
+  onPermissionModeChange: _onPermissionModeChange,
   persistence,
 }: AgentTransportOptions): ChatTransport<TUIAgentUIMessage> {
   return {
@@ -67,14 +67,17 @@ export function createAgentTransport({
       });
 
       // Get current settings at request time and build approval config
-      const autoApprove = getAutoApprove ? getAutoApprove() : "off";
+      const permissionMode = getPermissionMode?.() ?? "default";
       const sessionRules = getApprovalRules ? getApprovalRules() : [];
       const settings = getSettings?.() ?? {};
       const model = settings.modelId
         ? getModelById(settings.modelId, { devtools: true })
         : undefined;
-      const agentMode = getAgentMode?.() ?? "default";
       const planFilePath = getPlanFilePath?.() ?? undefined;
+
+      // Map permission mode to agent mode and auto-approve settings
+      const agentMode = permissionMode === "plan" ? "plan" : "default";
+      const autoApprove = permissionMode === "edits" ? "edits" : "off";
 
       // Build the approval config based on the current base config type
       const baseApproval = agentOptions.approval;

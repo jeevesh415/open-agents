@@ -194,8 +194,8 @@ async function main() {
       initialSettings: settings,
       onSettingsChange: handleSettingsChange,
       availableModels,
-      // Auto-accept all tools in sandbox mode since it's an isolated environment
-      ...(isRemoteSandbox && { initialAutoAcceptMode: "all" }),
+      // Auto-accept edits in sandbox mode since it's an isolated environment
+      ...(isRemoteSandbox && { initialPermissionMode: "edits" as const }),
     });
   } catch (error) {
     // Ignore abort errors from ESC key interrupts

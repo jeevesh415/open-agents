@@ -33,7 +33,7 @@ export type TUIAgentUIToolPart =
   | ToolUIPart<TUIAgentUITools>;
 
 /* --- */
-export type AutoAcceptMode = "off" | "edits" | "all";
+export type PermissionMode = "default" | "edits" | "plan";
 
 // Re-export ApprovalRule for client-side use
 export type { ApprovalRule } from "@open-harness/agent";
@@ -56,8 +56,8 @@ export type TUIOptions = {
     version?: string;
     model?: string;
   };
-  /** Initial auto-accept mode (defaults to "off") */
-  initialAutoAcceptMode?: AutoAcceptMode;
+  /** Initial permission mode (defaults to "default") */
+  initialPermissionMode?: PermissionMode;
   /** Initial settings (loaded from config file) */
   initialSettings?: Settings;
   /** Callback when settings change (for persistence) */

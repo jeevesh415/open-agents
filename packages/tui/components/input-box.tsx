@@ -37,12 +37,12 @@ import {
   imageBlockToFilePart,
   type ImageBlock,
 } from "../lib/image-blocks";
-import type { AutoAcceptMode } from "../types";
+import type { PermissionMode } from "../types";
 
 type InputBoxProps = {
   onSubmit: (value: string, files?: FileUIPart[]) => void;
-  autoAcceptMode: AutoAcceptMode;
-  onToggleAutoAccept: () => void;
+  permissionMode: PermissionMode;
+  onCyclePermissionMode: () => void;
   onCommandSelect?: (action: SlashCommandAction) => void;
   disabled?: boolean;
   inputTokens?: number;
@@ -50,25 +50,25 @@ type InputBoxProps = {
   pasteCollapseLineThreshold?: number;
 };
 
-function getAutoAcceptLabel(mode: AutoAcceptMode): string {
+function getModeLabel(mode: PermissionMode): string {
   switch (mode) {
-    case "off":
-      return "auto-accept off";
+    case "default":
+      return "default";
     case "edits":
       return "auto-accept edits on";
-    case "all":
-      return "auto-accept all on";
+    case "plan":
+      return "plan mode";
   }
 }
 
-function getAutoAcceptColor(mode: AutoAcceptMode): string {
+function getModeColor(mode: PermissionMode): string {
   switch (mode) {
-    case "off":
+    case "default":
       return "gray";
     case "edits":
       return "green";
-    case "all":
-      return "yellow";
+    case "plan":
+      return "cyan";
   }
 }
 
@@ -99,17 +99,15 @@ const ContextUsageIndicator = memo(function ContextUsageIndicator({
   );
 });
 
-// Memoized auto-accept indicator
-const AutoAcceptIndicator = memo(function AutoAcceptIndicator({
+// Memoized permission mode indicator
+const ModeIndicator = memo(function ModeIndicator({
   mode,
 }: {
-  mode: AutoAcceptMode;
+  mode: PermissionMode;
 }) {
   return (
     <Box marginTop={0}>
-      <Text color={getAutoAcceptColor(mode)}>
-        ▸▸ {getAutoAcceptLabel(mode)}
-      </Text>
+      <Text color={getModeColor(mode)}>▸▸ {getModeLabel(mode)}</Text>
       <Text color="gray"> (shift+tab to cycle)</Text>
     </Box>
   );
@@ -117,8 +115,8 @@ const AutoAcceptIndicator = memo(function AutoAcceptIndicator({
 
 export const InputBox = memo(function InputBox({
   onSubmit,
-  autoAcceptMode,
-  onToggleAutoAccept,
+  permissionMode,
+  onCyclePermissionMode,
   onCommandSelect,
   disabled = false,
   inputTokens = 0,
@@ -167,9 +165,9 @@ export const InputBox = memo(function InputBox({
   }, []);
 
   useInput((input, key) => {
-    // Shift+Tab to cycle auto-accept modes
+    // Shift+Tab to cycle permission modes
     if (key.shift && key.tab) {
-      onToggleAutoAccept();
+      onCyclePermissionMode();
     }
     // Escape to close suggestions or deselect image
     if (key.escape) {
@@ -553,9 +551,9 @@ export const InputBox = memo(function InputBox({
         visible={suggestions.length > 0}
       />
 
-      {/* Bottom row: auto-accept (left) and context usage (right) */}
+      {/* Bottom row: mode indicator (left) and context usage (right) */}
       <Box justifyContent="space-between">
-        <AutoAcceptIndicator mode={autoAcceptMode} />
+        <ModeIndicator mode={permissionMode} />
         {!disabled && (
           <ContextUsageIndicator
             inputTokens={inputTokens}

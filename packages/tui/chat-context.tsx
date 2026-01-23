@@ -14,10 +14,9 @@ import { tuiAgent } from "./config";
 import type {
   TUIAgentCallOptions,
   TUIAgentUIMessage,
-  AutoAcceptMode,
+  PermissionMode,
   ApprovalRule,
 } from "./types";
-import type { AgentMode } from "@open-harness/agent";
 import type { Settings } from "./lib/settings";
 import { AVAILABLE_MODELS, type ModelInfo } from "./lib/models";
 import { getContextLimit } from "@open-harness/agent";
@@ -29,7 +28,7 @@ export type PanelState =
 
 type ChatState = {
   model?: string;
-  autoAcceptMode: AutoAcceptMode;
+  permissionMode: PermissionMode;
   workingDirectory?: string;
   usage: LanguageModelUsage;
   sessionUsage: LanguageModelUsage;
@@ -41,27 +40,25 @@ type ChatState = {
   sessionId: string | null;
   projectPath: string | null;
   currentBranch: string;
-  agentMode: AgentMode;
   planFilePath: string | null;
 };
 
 type ChatContextValue = {
   chat: Chat<TUIAgentUIMessage>;
   state: ChatState;
-  setAutoAcceptMode: (mode: AutoAcceptMode) => void;
-  cycleAutoAcceptMode: () => void;
+  setPermissionMode: (mode: PermissionMode, planFilePath?: string) => void;
+  cyclePermissionMode: () => void;
   addApprovalRule: (rule: ApprovalRule) => void;
   clearApprovalRules: () => void;
   updateSettings: (updates: Partial<Settings>) => void;
   openPanel: (panel: PanelState) => void;
   closePanel: () => void;
   setSessionId: (sessionId: string | null) => void;
-  setAgentMode: (mode: AgentMode, planFilePath?: string) => void;
 };
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 
-const AUTO_ACCEPT_MODES: AutoAcceptMode[] = ["off", "edits", "all"];
+const PERMISSION_MODES: PermissionMode[] = ["default", "edits", "plan"];
 
 /**
  * Custom predicate that handles both approval-based tools and client-side tools.
@@ -109,7 +106,7 @@ type ChatProviderProps = {
   agentOptions: TUIAgentCallOptions;
   model?: string;
   workingDirectory?: string;
-  initialAutoAcceptMode?: AutoAcceptMode;
+  initialPermissionMode?: PermissionMode;
   initialSettings?: Settings;
   onSettingsChange?: (settings: Settings) => void;
   availableModels?: ModelInfo[];
@@ -178,7 +175,7 @@ export function ChatProvider({
   agentOptions,
   model,
   workingDirectory,
-  initialAutoAcceptMode = "off",
+  initialPermissionMode = "default",
   initialSettings = {},
   onSettingsChange,
   availableModels = AVAILABLE_MODELS,
@@ -187,8 +184,8 @@ export function ChatProvider({
   initialSessionId,
   initialMessages,
 }: ChatProviderProps) {
-  const [autoAcceptMode, setAutoAcceptMode] = useState<AutoAcceptMode>(
-    initialAutoAcceptMode,
+  const [permissionMode, setPermissionModeState] = useState<PermissionMode>(
+    initialPermissionMode,
   );
   const [usage, setUsage] = useState<LanguageModelUsage>(DEFAULT_USAGE);
   const [sessionUsage, setSessionUsage] =
@@ -199,12 +196,11 @@ export function ChatProvider({
   const [sessionId, setSessionId] = useState<string | null>(
     initialSessionId ?? null,
   );
-  const [agentMode, setAgentModeState] = useState<AgentMode>("default");
   const [planFilePath, setPlanFilePath] = useState<string | null>(null);
 
   // Use refs to pass current values to transport without recreating it
-  const autoAcceptModeRef = useRef(autoAcceptMode);
-  autoAcceptModeRef.current = autoAcceptMode;
+  const permissionModeRef = useRef(permissionMode);
+  permissionModeRef.current = permissionMode;
   const approvalRulesRef = useRef(approvalRules);
   approvalRulesRef.current = approvalRules;
   const settingsRef = useRef(settings);
@@ -213,8 +209,6 @@ export function ChatProvider({
   sessionIdRef.current = sessionId;
   const currentBranchRef = useRef(currentBranch);
   currentBranchRef.current = currentBranch;
-  const agentModeRef = useRef(agentMode);
-  agentModeRef.current = agentMode;
   const planFilePathRef = useRef(planFilePath);
   planFilePathRef.current = planFilePath;
 
@@ -254,23 +248,26 @@ export function ChatProvider({
     setApprovalRules([]);
   }, []);
 
-  const setAgentMode = useCallback((mode: AgentMode, filePath?: string) => {
-    setAgentModeState(mode);
-    setPlanFilePath(filePath ?? null);
-  }, []);
+  // Set permission mode directly (for agent-triggered changes)
+  const setPermissionMode = useCallback(
+    (mode: PermissionMode, filePath?: string) => {
+      setPermissionModeState(mode);
+      setPlanFilePath(filePath ?? null);
+    },
+    [],
+  );
 
   const transport = useMemo(
     () =>
       createAgentTransport({
         agent: tuiAgent,
         agentOptions,
-        getAutoApprove: () => autoAcceptModeRef.current,
+        getPermissionMode: () => permissionModeRef.current,
         getApprovalRules: () => approvalRulesRef.current,
         getSettings: () => settingsRef.current,
-        getAgentMode: () => agentModeRef.current,
         getPlanFilePath: () => planFilePathRef.current,
         onUsageUpdate: handleUsageUpdate,
-        onAgentModeChange: setAgentMode,
+        onPermissionModeChange: setPermissionMode,
         persistence: projectPath
           ? {
               getSessionId: () => sessionIdRef.current,
@@ -280,7 +277,7 @@ export function ChatProvider({
             }
           : undefined,
       }),
-    [agentOptions, handleUsageUpdate, projectPath, setAgentMode],
+    [agentOptions, handleUsageUpdate, projectPath, setPermissionMode],
   );
 
   const chat = useMemo(
@@ -296,7 +293,7 @@ export function ChatProvider({
   const state: ChatState = useMemo(
     () => ({
       model: effectiveModel,
-      autoAcceptMode,
+      permissionMode,
       workingDirectory,
       usage,
       sessionUsage,
@@ -308,12 +305,11 @@ export function ChatProvider({
       sessionId,
       projectPath: projectPath ?? null,
       currentBranch,
-      agentMode,
       planFilePath,
     }),
     [
       effectiveModel,
-      autoAcceptMode,
+      permissionMode,
       workingDirectory,
       usage,
       sessionUsage,
@@ -325,18 +321,17 @@ export function ChatProvider({
       sessionId,
       projectPath,
       currentBranch,
-      agentMode,
       planFilePath,
     ],
   );
 
-  const cycleAutoAcceptMode = () => {
-    setAutoAcceptMode((prev) => {
-      const currentIndex = AUTO_ACCEPT_MODES.indexOf(prev);
-      const nextIndex = (currentIndex + 1) % AUTO_ACCEPT_MODES.length;
-      return AUTO_ACCEPT_MODES[nextIndex] ?? "off";
+  const cyclePermissionMode = useCallback(() => {
+    setPermissionModeState((prev) => {
+      const currentIndex = PERMISSION_MODES.indexOf(prev);
+      const nextIndex = (currentIndex + 1) % PERMISSION_MODES.length;
+      return PERMISSION_MODES[nextIndex] ?? "default";
     });
-  };
+  }, []);
 
   const updateSettings = useCallback(
     (updates: Partial<Settings>) => {
@@ -362,15 +357,14 @@ export function ChatProvider({
       value={{
         chat,
         state,
-        setAutoAcceptMode,
-        cycleAutoAcceptMode,
+        setPermissionMode,
+        cyclePermissionMode,
         addApprovalRule,
         clearApprovalRules,
         updateSettings,
         openPanel,
         closePanel,
         setSessionId,
-        setAgentMode,
       }}
     >
       {children}

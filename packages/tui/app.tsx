@@ -526,12 +526,12 @@ function AppContent({ options }: AppProps) {
   const {
     chat,
     state,
-    cycleAutoAcceptMode,
+    cyclePermissionMode,
+    setPermissionMode,
     openPanel,
     closePanel,
     updateSettings,
     setSessionId,
-    setAgentMode,
   } = useChatContext();
   const { isExpanded, toggleExpanded } = useExpandedView();
   const { isTodoVisible, toggleTodoView } = useTodoView();
@@ -586,17 +586,17 @@ function AppContent({ options }: AppProps) {
         const output = extractEnterPlanModeOutput(part.output);
         if (output) {
           processedPlanToolsRef.current.add(part.toolCallId);
-          setAgentMode("plan", output.planFilePath);
+          setPermissionMode("plan", output.planFilePath);
         }
       } else if (part.type === "tool-exit_plan_mode") {
         const output = extractExitPlanModeOutput(part.output);
         if (output) {
           processedPlanToolsRef.current.add(part.toolCallId);
-          setAgentMode("default");
+          setPermissionMode("default");
         }
       }
     }
-  }, [messages, setAgentMode]);
+  }, [messages, setPermissionMode]);
 
   const { hasPendingApproval, activeApprovalId, pendingToolPart } =
     useMemo(() => {
@@ -923,8 +923,8 @@ function AppContent({ options }: AppProps) {
           {!isExpanded && (
             <InputBox
               onSubmit={handleSubmit}
-              autoAcceptMode={state.autoAcceptMode}
-              onToggleAutoAccept={cycleAutoAcceptMode}
+              permissionMode={state.permissionMode}
+              onCyclePermissionMode={cyclePermissionMode}
               onCommandSelect={handleCommandSelect}
               disabled={isStreaming}
               inputTokens={state.usage.inputTokens ?? 0}
