@@ -1,6 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { createPlanFile } from "@open-harness/shared";
+import { join } from "node:path";
+import { generatePlanName } from "@open-harness/shared";
+import { getAgentContext } from "./utils";
 
 // TODO: if anthropic bug still exists, add empty item here
 const enterPlanModeInputSchema = z.object({
@@ -20,7 +22,7 @@ WHEN TO USE:
 
 WHAT HAPPENS:
 - Tools are restricted to read-only operations (read, grep, glob, bash read-only commands)
-- You can write ONLY to a plan file (stored in ~/.config/open-harness/plans/)
+- You can write ONLY to a plan file (stored in {project}/.open-harness/plans/)
 - You can delegate to explorer subagents only (not executor)
 - System prompt is updated with plan mode instructions
 
@@ -28,8 +30,17 @@ HOW TO EXIT:
 - Call exit_plan_mode when your plan is complete
 - User will review and approve the plan before you can proceed with implementation`,
     inputSchema: enterPlanModeInputSchema,
-    execute: async () => {
-      const { planFilePath, planName } = await createPlanFile();
+    execute: async (_, { experimental_context }) => {
+      const { sandbox } = getAgentContext(
+        experimental_context,
+        "enter_plan_mode",
+      );
+
+      // Create plan file in project directory
+      const planName = generatePlanName();
+      const plansDir = join(sandbox.workingDirectory, ".open-harness", "plans");
+      await sandbox.mkdir(plansDir, { recursive: true });
+      const planFilePath = join(plansDir, `${planName}.md`);
 
       return {
         success: true,

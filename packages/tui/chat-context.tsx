@@ -20,7 +20,9 @@ import type {
 import type { Settings } from "./lib/settings";
 import { AVAILABLE_MODELS, type ModelInfo } from "./lib/models";
 import { getContextLimit } from "@open-harness/agent";
-import { createPlanFile } from "@open-harness/shared";
+import { generatePlanName } from "@open-harness/shared";
+import type { Sandbox } from "@open-harness/sandbox";
+import { join } from "node:path";
 
 export type PanelState =
   | { type: "none" }
@@ -115,6 +117,8 @@ type ChatProviderProps = {
   currentBranch?: string;
   initialSessionId?: string;
   initialMessages?: TUIAgentUIMessage[];
+  /** Sandbox for plan file creation (used when cycling permission mode manually) */
+  sandbox?: Sandbox;
 };
 
 const DEFAULT_USAGE: LanguageModelUsage = {
@@ -184,6 +188,7 @@ export function ChatProvider({
   currentBranch = "",
   initialSessionId,
   initialMessages,
+  sandbox,
 }: ChatProviderProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(
     initialPermissionMode,
@@ -326,24 +331,26 @@ export function ChatProvider({
     ],
   );
 
-  const cyclePermissionMode = useCallback(() => {
+  const cyclePermissionMode = useCallback(async () => {
     const prev = permissionModeRef.current;
     const currentIndex = PERMISSION_MODES.indexOf(prev);
     const nextIndex = (currentIndex + 1) % PERMISSION_MODES.length;
     const nextMode = PERMISSION_MODES[nextIndex] ?? "default";
 
-    // If entering plan mode, create plan file
-    if (nextMode === "plan") {
-      createPlanFile().then(({ planFilePath }) => {
-        setPlanFilePath(planFilePath);
-      });
+    // If entering plan mode, create plan file using sandbox
+    if (nextMode === "plan" && sandbox) {
+      const planName = generatePlanName();
+      const plansDir = join(sandbox.workingDirectory, ".open-harness", "plans");
+      await sandbox.mkdir(plansDir, { recursive: true });
+      const planFilePath = join(plansDir, `${planName}.md`);
+      setPlanFilePath(planFilePath);
     } else if (prev === "plan") {
       // Exiting plan mode, clear plan file path
       setPlanFilePath(null);
     }
 
     setPermissionModeState(nextMode);
-  }, []);
+  }, [sandbox]);
 
   const updateSettings = useCallback(
     (updates: Partial<Settings>) => {

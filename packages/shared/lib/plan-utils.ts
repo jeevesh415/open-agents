@@ -1,11 +1,8 @@
 /**
- * Shared utilities for plan file creation and management.
- * Used by both the enter_plan_mode tool and manual TUI plan mode entry.
+ * Shared utilities for plan name generation.
+ * Plan file creation is handled via sandbox operations to support both
+ * local and cloud environments.
  */
-
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { mkdir } from "node:fs/promises";
 
 // Word lists for generating random plan names
 const ADJECTIVES = [
@@ -100,25 +97,4 @@ export function generatePlanName(): string {
   const color = randomElement(COLORS);
   const animal = randomElement(ANIMALS);
   return `${adjective}-${color}-${animal}`;
-}
-
-export const CONFIG_DIR = join(homedir(), ".config", "open-harness");
-export const PLANS_DIR = join(CONFIG_DIR, "plans");
-
-/**
- * Create a new plan file and return its path.
- * Creates the plans directory if it doesn't exist.
- */
-export async function createPlanFile(): Promise<{
-  planFilePath: string;
-  planName: string;
-}> {
-  // Ensure plans directory exists
-  await mkdir(PLANS_DIR, { recursive: true });
-
-  // Generate unique plan name
-  const planName = generatePlanName();
-  const planFilePath = join(PLANS_DIR, `${planName}.md`);
-
-  return { planFilePath, planName };
 }
