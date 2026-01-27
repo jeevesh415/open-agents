@@ -7,6 +7,12 @@ import {
 } from "./types";
 
 /**
+ * Built-in commands that skills cannot shadow.
+ * Skills with these names will be unreachable via slash command.
+ */
+const BUILTIN_COMMANDS = ["model", "resume", "new"];
+
+/**
  * Parse YAML frontmatter from SKILL.md content.
  * Returns null if frontmatter is missing or invalid.
  *
@@ -161,8 +167,18 @@ export async function discoverSkills(
         name: frontmatter.name,
         description: frontmatter.description,
         path: skillDir,
+        filename: path.basename(skillFile),
         options: frontmatterToOptions(frontmatter),
       });
+    }
+  }
+
+  // Warn about skill names that shadow built-in commands
+  for (const skill of skills) {
+    if (BUILTIN_COMMANDS.includes(skill.name.toLowerCase())) {
+      console.warn(
+        `Warning: Skill "${skill.name}" shadows built-in command /${skill.name}. The skill will be unreachable via slash command.`,
+      );
     }
   }
 

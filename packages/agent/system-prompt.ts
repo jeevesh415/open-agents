@@ -204,9 +204,12 @@ export interface BuildSystemPromptOptions {
 function buildSkillsPrompt(skills: SkillMetadata[]): string {
   if (skills.length === 0) return "";
 
-  // Filter to only user-invocable skills (unless explicitly disabled)
+  // Filter to skills the model can actually invoke:
+  // - Must be user-invocable (for slash command display)
+  // - Must NOT have model invocation disabled
   const invocableSkills = skills.filter(
-    (s) => s.options.userInvocable !== false,
+    (s) =>
+      s.options.userInvocable !== false && !s.options.disableModelInvocation,
   );
 
   if (invocableSkills.length === 0) return "";

@@ -106,22 +106,16 @@ Important:
     }
 
     // Load skill content via sandbox
-    const skillFilePath = path.join(foundSkill.path, "SKILL.md");
+    const skillFilePath = path.join(foundSkill.path, foundSkill.filename);
     let fileContent: string;
     try {
       fileContent = await sandbox.readFile(skillFilePath, "utf-8");
-    } catch {
-      // Try lowercase
-      try {
-        const lowercasePath = path.join(foundSkill.path, "skill.md");
-        fileContent = await sandbox.readFile(lowercasePath, "utf-8");
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return {
-          success: false,
-          error: `Failed to read skill file: ${message}`,
-        };
-      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        error: `Failed to read skill file: ${message}`,
+      };
     }
 
     // Parse and extract body (skip frontmatter)

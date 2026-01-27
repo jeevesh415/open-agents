@@ -5,8 +5,14 @@ import { z } from "zod";
  * Defines the expected structure in SKILL.md files.
  */
 export const skillFrontmatterSchema = z.object({
-  name: z.string().describe("Unique name of the skill"),
-  description: z.string().describe("Short description for the agent"),
+  name: z
+    .string()
+    .min(1, "Skill name cannot be empty")
+    .describe("Unique name of the skill"),
+  description: z
+    .string()
+    .min(1, "Skill description cannot be empty")
+    .describe("Short description for the agent"),
   version: z.string().optional().describe("Skill version"),
   "disable-model-invocation": z
     .boolean()
@@ -57,6 +63,8 @@ export interface SkillMetadata {
   description: string;
   /** Path to the skill directory */
   path: string;
+  /** Filename of the skill file (SKILL.md or skill.md) */
+  filename: string;
   /** Skill options from frontmatter */
   options: SkillOptions;
 }
