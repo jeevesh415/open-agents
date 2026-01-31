@@ -1,3 +1,5 @@
+import { getVercelOidcToken } from "@vercel/oidc";
+
 import { verifyAccessToken } from "@/lib/db/cli-tokens";
 
 const AI_GATEWAY_URL = "https://ai-gateway.vercel.sh/v3/ai";
@@ -102,22 +104,16 @@ async function handleProxyRequest(
     forwardHeaders.set(key, value);
   }
 
-  const gatewayToken = process.env.VERCEL_OIDC_TOKEN;
-  console.log(process.env.VERCEL_OIDC_TOKEN);
-  if (!gatewayToken) {
-    console.error("AI proxy missing VERCEL_OIDC_TOKEN:", {
+  let gatewayToken: string;
+  try {
+    gatewayToken = await getVercelOidcToken();
+  } catch (error) {
+    console.error("AI proxy missing OIDC token:", {
       requestId,
-      hasGatewayToken: false,
+      error: error instanceof Error ? error.message : String(error),
     });
-    return Response.json(
-      { error: "Missing VERCEL_OIDC_TOKEN configuration" },
-      { status: 500 },
-    );
+    return Response.json({ error: "Missing OIDC token" }, { status: 500 });
   }
-  console.error("AI proxy using gateway token:", {
-    requestId,
-    hasGatewayToken: true,
-  });
 
   // Add the real gateway auth (OIDC token for Vercel AI Gateway)
   forwardHeaders.set("Authorization", `Bearer ${gatewayToken}`);
