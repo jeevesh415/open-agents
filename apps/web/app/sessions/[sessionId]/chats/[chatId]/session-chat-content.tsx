@@ -498,6 +498,7 @@ export function SessionChatContent() {
     deleteChat,
     markChatRead,
     setChatStreaming,
+    setChatTitle,
     loading: chatsLoading,
     refreshChats,
   } = useSessionChats(session.id);
@@ -1892,6 +1893,16 @@ export function SessionChatContent() {
                   setInput("");
                   clearImages();
 
+                  if (!hadInitialMessages && chatInfo.title === "New chat") {
+                    const trimmedText = messageText.trim();
+                    if (trimmedText.length > 0) {
+                      const nextTitle =
+                        trimmedText.length > 30
+                          ? `${trimmedText.slice(0, 30)}...`
+                          : trimmedText;
+                      void setChatTitle(chatInfo.id, nextTitle);
+                    }
+                  }
                   void setChatStreaming(chatInfo.id, true);
                   sendMessage({ text: messageText, files });
                 }}

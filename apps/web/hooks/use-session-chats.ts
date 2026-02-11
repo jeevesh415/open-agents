@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import type { Chat } from "@/lib/db/schema";
 import { fetcher } from "@/lib/swr";
@@ -25,7 +26,38 @@ export function useSessionChats(sessionId: string | null) {
     },
   );
 
-  const chats = data?.chats ?? [];
+  const [optimisticTitles, setOptimisticTitles] = useState<
+    Record<string, string>
+  >({});
+
+  const chats = (data?.chats ?? []).map((chat) => {
+    const optimisticTitle = optimisticTitles[chat.id];
+    if (!optimisticTitle || chat.title !== "New chat") {
+      return chat;
+    }
+    return { ...chat, title: optimisticTitle };
+  });
+
+  useEffect(() => {
+    if (!data) return;
+    setOptimisticTitles((current) => {
+      let next = current;
+      let changed = false;
+
+      for (const chat of data.chats) {
+        if (!current[chat.id]) continue;
+        if (chat.title !== "New chat") {
+          if (next === current) {
+            next = { ...current };
+          }
+          delete next[chat.id];
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [data]);
 
   const createChat = async () => {
     if (!sessionId) {
@@ -159,6 +191,10 @@ export function useSessionChats(sessionId: string | null) {
     );
   };
 
+  const setChatTitle = async (chatId: string, title: string) => {
+    setOptimisticTitles((current) => ({ ...current, [chatId]: title }));
+  };
+
   return {
     chats,
     loading: isLoading,
@@ -168,6 +204,7 @@ export function useSessionChats(sessionId: string | null) {
     deleteChat,
     markChatRead,
     setChatStreaming,
+    setChatTitle,
     refreshChats: mutate,
   };
 }
