@@ -1,4 +1,8 @@
-import type { UIMessageChunk } from "ai";
+import {
+  type UIMessageChunk,
+  JsonToSseTransformStream,
+  UI_MESSAGE_STREAM_HEADERS,
+} from "ai";
 import { getRun } from "workflow/api";
 import { getChatById, getSessionById } from "@/lib/db/sessions";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -44,15 +48,15 @@ export async function GET(request: Request, context: RouteContext) {
 
   try {
     const run = getRun(runId);
-    const stream = run.getReadable<UIMessageChunk>({
-      startIndex: Number.isFinite(startIndex) ? startIndex : 0,
-    });
+    const stream = run
+      .getReadable<UIMessageChunk>({
+        startIndex: Number.isFinite(startIndex) ? startIndex : 0,
+      })
+      .pipeThrough(new JsonToSseTransformStream());
 
     return new Response(stream, {
       headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        ...UI_MESSAGE_STREAM_HEADERS,
         "x-workflow-run-id": runId,
       },
     });

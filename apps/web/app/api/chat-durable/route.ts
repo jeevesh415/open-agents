@@ -7,9 +7,11 @@ import { connectSandbox } from "@open-harness/sandbox";
 import { DEFAULT_SANDBOX_PORTS } from "@/lib/sandbox/config";
 import {
   convertToModelMessages,
+  JsonToSseTransformStream,
   type GatewayModelId,
   type LanguageModel,
   type UIMessageChunk,
+  UI_MESSAGE_STREAM_HEADERS,
 } from "ai";
 import { start } from "workflow/api";
 import type { WebAgentUIMessage } from "@/app/types";
@@ -297,14 +299,16 @@ export async function POST(req: Request) {
   // Store run ID as activeStreamId so the client can reconnect
   await updateChat(chatId, { activeStreamId: run.runId });
 
-  // Return the workflow's readable stream as a UIMessageChunk stream
-  const stream = run.getReadable<UIMessageChunk>();
+  // Return the workflow's readable stream as an SSE-encoded UIMessageChunk stream.
+  // getReadable() returns object chunks; pipe through JsonToSseTransformStream
+  // to serialize them into the text/event-stream format the client expects.
+  const stream = run
+    .getReadable<UIMessageChunk>()
+    .pipeThrough(new JsonToSseTransformStream());
 
   return new Response(stream, {
     headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
+      ...UI_MESSAGE_STREAM_HEADERS,
       "x-workflow-run-id": run.runId,
     },
   });
