@@ -8,7 +8,8 @@ import {
   type TypedToolResult,
 } from "ai";
 import { z } from "zod";
-import { addCacheControl, compactContext } from "./context-management";
+import { addCacheControl } from "./context-management";
+import { aggressiveCompactContext } from "./context-management/aggressive-compaction";
 import type { SkillMetadata } from "./skills/types";
 import { buildSystemPrompt } from "./system-prompt";
 import {
@@ -73,7 +74,7 @@ export const openHarnessAgent = new ToolLoopAgent({
   callOptionsSchema,
   prepareStep: ({ messages, model, steps }) => ({
     messages: addCacheControl({
-      messages: compactContext({ messages, steps }),
+      messages: aggressiveCompactContext({ messages, steps }),
       model,
     }),
   }),
