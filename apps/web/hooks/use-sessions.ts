@@ -29,6 +29,11 @@ interface CreateSessionResponse {
   chat: Chat;
 }
 
+interface UseSessionsOptions {
+  enabled?: boolean;
+  initialData?: SessionWithUnread[];
+}
+
 type SessionStreamingOverlay = {
   setAt: number;
   seenServerStreaming: boolean;
@@ -51,15 +56,20 @@ function overlaysEqual(
   );
 }
 
-export function useSessions(options?: { enabled?: boolean }) {
+export function useSessions(options?: UseSessionsOptions) {
   const enabled = options?.enabled ?? true;
   const [, setOverlayVersion] = useState(0);
   const { mutate: globalMutate } = useSWRConfig();
+  const fallbackData = options?.initialData
+    ? { sessions: options.initialData }
+    : undefined;
 
   const { data, error, isLoading, mutate } = useSWR<SessionsResponse>(
     enabled ? "/api/sessions" : null,
     fetcher,
     {
+      fallbackData,
+      revalidateOnMount: fallbackData ? false : undefined,
       refreshInterval: (latestData) => {
         const hasStreamingSession =
           latestData?.sessions.some((session) => session.hasStreaming) ?? false;

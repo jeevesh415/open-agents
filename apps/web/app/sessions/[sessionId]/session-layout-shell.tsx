@@ -9,7 +9,7 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar";
 import { useSessionChats } from "@/hooks/use-session-chats";
-import { useSessions } from "@/hooks/use-sessions";
+import { useSessions, type SessionWithUnread } from "@/hooks/use-sessions";
 import type { Session } from "@/lib/db/schema";
 import { InboxSidebar } from "@/components/inbox-sidebar";
 import { SessionLayoutContext } from "./session-layout-context";
@@ -22,12 +22,14 @@ type SessionLayoutShellProps = {
     defaultModelId: string | null;
     chats: SessionChatListItem[];
   };
+  initialSessionsData?: SessionWithUnread[];
   children: React.ReactNode;
 };
 
 export function SessionLayoutShell({
   session: initialSession,
   initialChatsData,
+  initialSessionsData,
   children,
 }: SessionLayoutShellProps) {
   const router = useRouter();
@@ -47,6 +49,7 @@ export function SessionLayoutShell({
     refreshSessions,
   } = useSessions({
     enabled: true,
+    initialData: initialSessionsData,
   });
 
   // Derive lastRepo from the current session for the new-session dialog
