@@ -2,6 +2,7 @@
 
 import { Archive, GitMerge, Plus } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { NewSessionDialog } from "@/components/new-session-dialog";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
 import type { SessionWithUnread } from "@/hooks/use-sessions";
@@ -11,7 +12,7 @@ type InboxSidebarProps = {
   sessionsLoading: boolean;
   activeSessionId: string;
   onSessionClick: (sessionId: string) => void;
-  onNewSession: () => void;
+  lastRepo: { owner: string; repo: string } | null;
 };
 
 function formatRelativeTime(date: Date): string {
@@ -77,10 +78,11 @@ export function InboxSidebar({
   sessionsLoading,
   activeSessionId,
   onSessionClick,
-  onNewSession,
+  lastRepo,
 }: InboxSidebarProps) {
   const { isMobile, setOpenMobile } = useSidebar();
   const [showArchived, setShowArchived] = useState(false);
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
 
   const activeSessions = useMemo(
     () => sessions.filter((s) => s.status !== "archived"),
@@ -100,11 +102,6 @@ export function InboxSidebar({
     [isMobile, setOpenMobile, onSessionClick],
   );
 
-  const handleNewSession = useCallback(() => {
-    if (isMobile) setOpenMobile(false);
-    onNewSession();
-  }, [isMobile, setOpenMobile, onNewSession]);
-
   return (
     <>
       {/* Header */}
@@ -115,7 +112,7 @@ export function InboxSidebar({
             type="button"
             variant="ghost"
             size="icon"
-            onClick={handleNewSession}
+            onClick={() => setNewSessionOpen(true)}
             className="h-7 w-7"
           >
             <Plus className="h-4 w-4" />
@@ -252,6 +249,13 @@ export function InboxSidebar({
           </div>
         )}
       </div>
+
+      {/* New session modal */}
+      <NewSessionDialog
+        open={newSessionOpen}
+        onOpenChange={setNewSessionOpen}
+        lastRepo={lastRepo}
+      />
     </>
   );
 }

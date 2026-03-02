@@ -696,7 +696,7 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
 
     const computedStyle = getComputedStyle(textarea);
     const lineHeight = parseFloat(computedStyle.lineHeight) || 24;
-    const maxLines = 8;
+    const maxLines = 3;
     const maxHeight = lineHeight * maxLines;
 
     // Store current height to avoid flicker
@@ -2337,8 +2337,8 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
         />
       )}
 
-      {/* Compose — Gmail-style */}
-      <div className="border-t border-border bg-background p-4 pb-2 sm:pb-6">
+      {/* Input */}
+      <div className="p-4 pb-2 sm:pb-8">
         <div className="mx-auto max-w-4xl space-y-2">
           {restoreError && (
             <div className="flex items-center justify-between rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -2462,7 +2462,7 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
                   addImages(files);
                 }
               }}
-              className={`overflow-hidden rounded-xl border border-border bg-background shadow-sm transition-colors focus-within:border-foreground/20 focus-within:shadow-md ${isDragging ? "ring-2 ring-blue-500/50" : ""}`}
+              className={`overflow-hidden rounded-2xl bg-muted transition-colors ${isDragging ? "ring-2 ring-blue-500/50" : ""}`}
             >
               {/* Sandbox overlay when inactive */}
               <SandboxInputOverlay
@@ -2482,13 +2482,13 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
               {/* Image attachments preview */}
               <ImageAttachmentsPreview images={images} onRemove={removeImage} />
 
-              {/* Compose body */}
-              <div className="px-4 pb-2 pt-4">
+              {/* Textarea area */}
+              <div className="px-4 pb-2 pt-3">
                 <textarea
                   ref={inputRef}
                   value={input}
-                  placeholder="Send a message..."
-                  rows={3}
+                  placeholder="Request changes or ask a question..."
+                  rows={1}
                   onChange={(e) => {
                     setInput(e.currentTarget.value);
                     setCursorPosition(e.currentTarget.selectionStart ?? 0);
@@ -2531,14 +2531,14 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
                     }
                   }}
                   disabled={isArchived || isChatInFlight}
-                  className="w-full resize-none overflow-y-auto bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-                  style={{ minHeight: "72px" }}
+                  className="w-full resize-none overflow-y-auto bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  style={{ minHeight: "24px" }}
                 />
               </div>
 
-              {/* Compose toolbar */}
-              <div className="flex items-center justify-between border-t border-border/50 px-3 py-2">
-                <div className="flex items-center gap-1">
+              {/* Bottom toolbar */}
+              <div className="flex items-center justify-between px-3 pb-2">
+                <div className="flex items-center gap-2">
                   <Button
                     type="button"
                     variant="ghost"
@@ -2548,27 +2548,6 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
                     className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
                   >
                     <Paperclip className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleMicClick}
-                    disabled={isArchived || recordingState === "processing"}
-                    className={`relative h-8 w-8 rounded-full ${
-                      recordingState === "recording"
-                        ? "text-red-500"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {recordingState === "recording" && (
-                      <span className="absolute inset-0 animate-pulse rounded-full bg-red-500/30" />
-                    )}
-                    {recordingState === "processing" ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Mic className="h-5 w-5" />
-                    )}
                   </Button>
                   {renderMessages.length === 0 && chatInfo.modelId ? (
                     <div
@@ -2601,12 +2580,33 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
                   />
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleMicClick}
+                    disabled={isArchived || recordingState === "processing"}
+                    className={`relative h-8 w-8 rounded-full ${
+                      recordingState === "recording"
+                        ? "text-red-500"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {recordingState === "recording" && (
+                      <span className="absolute inset-0 animate-pulse rounded-full bg-red-500/30" />
+                    )}
+                    {recordingState === "processing" ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <Mic className="h-5 w-5" />
+                    )}
+                  </Button>
+
                   {isChatInFlight || hasPendingResponse ? (
                     <Button
                       type="button"
-                      size="sm"
-                      variant="destructive"
+                      size="icon"
                       onClick={() => {
                         fetch(`/api/chat/${chatInfo.id}/stop`, {
                           method: "POST",
@@ -2614,11 +2614,10 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
                         stopChatStream();
                         setHasPendingResponse(false);
                       }}
-                      className="gap-1.5"
+                      className="h-8 w-8 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
                       style={{ touchAction: "manipulation" }}
                     >
                       <Square className="h-3 w-3 fill-current" />
-                      Stop
                     </Button>
                   ) : (
                     <Tooltip>
@@ -2626,8 +2625,11 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
                         <span>
                           <Button
                             type="submit"
-                            size="sm"
+                            size="icon"
                             onTouchEnd={() => {
+                              // On iOS, tapping submit while the textarea is focused
+                              // causes the keyboard to briefly flash open then closed.
+                              // Blur the textarea immediately to prevent this.
                               inputRef.current?.blur();
                             }}
                             disabled={
@@ -2637,10 +2639,9 @@ export function SessionChatContent({ initialModels }: SessionChatContentProps) {
                               isUpdatingModel ||
                               !isSandboxActive
                             }
-                            className="gap-1.5 disabled:opacity-30"
+                            className="h-8 w-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30"
                           >
-                            <ArrowUp className="h-3.5 w-3.5" />
-                            Send
+                            <ArrowUp className="h-4 w-4" />
                           </Button>
                         </span>
                       </TooltipTrigger>

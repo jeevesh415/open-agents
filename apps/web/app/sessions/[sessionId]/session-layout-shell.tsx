@@ -43,6 +43,17 @@ export function SessionLayoutShell({
     enabled: true,
   });
 
+  // Derive lastRepo from the current session for the new-session dialog
+  const lastRepo = useMemo(() => {
+    if (initialSession.repoOwner && initialSession.repoName) {
+      return {
+        owner: initialSession.repoOwner,
+        repo: initialSession.repoName,
+      };
+    }
+    return null;
+  }, [initialSession.repoOwner, initialSession.repoName]);
+
   // Handle session click from the inbox sidebar
   const handleSessionClick = useCallback(
     (targetSessionId: string) => {
@@ -51,18 +62,13 @@ export function SessionLayoutShell({
     [router],
   );
 
-  // Handle new session from sidebar
-  const handleNewSession = useCallback(() => {
-    router.push("/");
-  }, [router]);
-
   const sidebarContent = (
     <InboxSidebar
       sessions={sessions}
       sessionsLoading={sessionsLoading}
       activeSessionId={sessionId}
       onSessionClick={handleSessionClick}
-      onNewSession={handleNewSession}
+      lastRepo={lastRepo}
     />
   );
 
