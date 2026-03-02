@@ -258,8 +258,9 @@ export async function GET() {
       .orderBy(chatMessages.createdAt)
       .limit(1);
 
-    // Get last assistant message (for todos, response, and pending questions)
-    const [lastAssistantMsg] = await db
+    // Get recent assistant messages (newest first) — we search across multiple
+    // because the last message may be purely tool calls with no text.
+    const recentAssistantMsgs = await db
       .select({ parts: chatMessages.parts })
       .from(chatMessages)
       .where(
@@ -269,15 +270,31 @@ export async function GET() {
         ),
       )
       .orderBy(desc(chatMessages.createdAt))
-      .limit(1);
+      .limit(5);
 
     const userParts = extractPartsArray(firstUserMsg?.parts);
-    const assistantParts = extractPartsArray(lastAssistantMsg?.parts);
+
+    // The most recent message's parts (for pending questions / todos)
+    const newestAssistantParts = extractPartsArray(
+      recentAssistantMsgs[0]?.parts,
+    );
+
+    // Search across recent messages for text / todos (first match wins)
+    let latestResponse: string | null = null;
+    let latestTodos: TodoItem[] | null = null;
+    for (const msg of recentAssistantMsgs) {
+      const parts = extractPartsArray(msg.parts);
+      if (!latestResponse) {
+        latestResponse = extractLastText(parts);
+      }
+      if (!latestTodos) {
+        latestTodos = extractLatestTodos(parts);
+      }
+      if (latestResponse && latestTodos) break;
+    }
 
     const objective = extractObjective(userParts);
-    const latestTodos = extractLatestTodos(assistantParts);
-    const latestResponse = extractLastText(assistantParts);
-    const pendingQuestion = hasPendingQuestion(assistantParts);
+    const pendingQuestion = hasPendingQuestion(newestAssistantParts);
 
     const hasChanges =
       (s.linesAdded !== null && s.linesAdded > 0) ||

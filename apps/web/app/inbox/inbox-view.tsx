@@ -18,8 +18,10 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
+  ExternalLink,
   Eye,
   FileText,
+  GitPullRequest,
   Loader2,
   MessageSquareWarning,
   Square,
@@ -391,14 +393,28 @@ function InboxItemDetail({
             <AttentionBadge state={item.attentionState} />
             <h2 className="text-lg font-semibold">{item.sessionTitle}</h2>
           </div>
-          <button
-            type="button"
-            onClick={onNavigate}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Open session
-            <ChevronRight className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {item.prNumber && item.repoOwner && item.repoName ? (
+              <Link
+                href={`https://github.com/${item.repoOwner}/${item.repoName}/pull/${item.prNumber}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                <GitPullRequest className="h-4 w-4" />
+                PR #{item.prNumber}
+                <ExternalLink className="h-3 w-3 text-muted-foreground" />
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              onClick={onNavigate}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              Open session
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         {item.repoName ? (
           <p className="mt-1 text-sm text-muted-foreground">
