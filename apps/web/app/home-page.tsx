@@ -1,6 +1,6 @@
 "use client";
 
-import { History } from "lucide-react";
+import { History, Inbox } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -11,6 +11,7 @@ import { SessionDrawer } from "@/components/session-drawer";
 import { SessionStarter } from "@/components/session-starter";
 import { UserAvatarDropdown } from "@/components/user-avatar-dropdown";
 import { useCliTokens } from "@/hooks/use-cli-tokens";
+import { useInbox } from "@/hooks/use-inbox";
 import { useSession } from "@/hooks/use-session";
 import { useSessions } from "@/hooks/use-sessions";
 
@@ -26,6 +27,7 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
     enabled: isAuthenticated,
   });
 
+  const { actionableCount } = useInbox({ enabled: isAuthenticated });
   const activeSessionCount = sessions.filter(
     (s) => s.status !== "archived",
   ).length;
@@ -81,6 +83,18 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
           <CliConnectBanner />
         </div>
         <div className="flex items-center gap-2 sm:justify-self-end">
+          <Link
+            href="/inbox"
+            className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {actionableCount > 0 ? (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500/15 px-1.5 text-xs font-medium tabular-nums text-amber-500">
+                {actionableCount}
+              </span>
+            ) : null}
+            <Inbox className="h-4 w-4" />
+            <span>Inbox</span>
+          </Link>
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
