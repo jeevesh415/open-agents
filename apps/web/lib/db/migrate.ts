@@ -14,11 +14,10 @@ const client = postgres(url, { max: 1 });
 const db = drizzle(client);
 
 /**
- * One-time baseline: if the database was bootstrapped via `db:push` (tables
- * exist but drizzle has no migration history), mark all existing migrations as
- * already applied so the migrator doesn't try to replay them.
- *
- * This runs exactly once — after this, normal `migrate()` takes over.
+ * Baseline: if the database was bootstrapped via `db:push`, tables exist but
+ * the drizzle migration ledger is missing entries.  This function compares the
+ * journal on disk with the rows in `__drizzle_migrations` and inserts any
+ * missing entries so `migrate()` won't try to replay already-applied DDL.
  */
 async function baselineIfNeeded() {
 	// Check if any app table exists (db:push was used)
@@ -30,9 +29,7 @@ async function baselineIfNeeded() {
 
 	if (!tablesExist) return; // fresh database — nothing to baseline
 
-	// Check if the drizzle migrations table has any rows
-	// First ensure the schema + table exist (migrate() creates them, but we
-	// need to check before it runs)
+	// Ensure the drizzle schema + migrations table exist
 	await client`CREATE SCHEMA IF NOT EXISTS drizzle`;
 	await client`
 		CREATE TABLE IF NOT EXISTS drizzle."__drizzle_migrations" (
@@ -41,30 +38,32 @@ async function baselineIfNeeded() {
 			created_at bigint
 		)`;
 
-	const [{ count }] = await client`
-		SELECT count(*)::int AS count FROM drizzle."__drizzle_migrations"`;
+	// Get already-tracked hashes
+	const tracked = await client`
+		SELECT hash FROM drizzle."__drizzle_migrations"`;
+	const trackedHashes = new Set(tracked.map((r) => r.hash as string));
 
-	if (count > 0) return; // migrations already tracked — nothing to do
-
-	// Database was bootstrapped via db:push — seed all existing migrations
-	console.log("Detected db:push-bootstrapped database — baselining migration history…");
-
+	// Read the journal
 	const journalPath = join(import.meta.dirname, "migrations", "meta", "_journal.json");
 	const journal = JSON.parse(readFileSync(journalPath, "utf-8"));
 
+	let baselined = 0;
 	for (const entry of journal.entries) {
 		const sqlPath = join(import.meta.dirname, "migrations", `${entry.tag}.sql`);
 		const sql = readFileSync(sqlPath, "utf-8");
-
-		// Hash the migration content the same way drizzle-orm does (hex of the SQL)
 		const hash = new Bun.CryptoHasher("sha256").update(sql).digest("hex");
+
+		if (trackedHashes.has(hash)) continue; // already tracked
 
 		await client`
 			INSERT INTO drizzle."__drizzle_migrations" (hash, created_at)
 			VALUES (${hash}, ${entry.when})`;
+		baselined++;
 	}
 
-	console.log(`Baselined ${journal.entries.length} migrations`);
+	if (baselined > 0) {
+		console.log(`Baselined ${baselined} migration(s) (db:push → migrations sync)`);
+	}
 }
 
 try {
