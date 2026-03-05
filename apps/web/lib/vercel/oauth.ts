@@ -1,9 +1,9 @@
 import crypto from "crypto";
 
 const VERCEL_AUTHORIZE_URL = "https://vercel.com/oauth/authorize";
-const VERCEL_TOKEN_URL = "https://api.vercel.com/login/oauth/token";
-const VERCEL_USERINFO_URL = "https://api.vercel.com/login/oauth/userinfo";
-const VERCEL_REVOKE_URL = "https://api.vercel.com/login/oauth/token/revoke";
+const VERCEL_TOKEN_URL = "https://vercel.com/api/login/oauth/token";
+const VERCEL_USERINFO_URL = "https://vercel.com/api/login/oauth/userinfo";
+const VERCEL_REVOKE_URL = "https://vercel.com/api/login/oauth/token/revoke";
 
 export function generateCodeVerifier(): string {
   return crypto.randomBytes(32).toString("base64url");
