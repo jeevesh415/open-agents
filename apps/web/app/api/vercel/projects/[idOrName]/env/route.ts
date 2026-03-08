@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/session/get-server-session";
 import {
   fetchVercelProjectEnvironmentResponse,
@@ -63,22 +62,19 @@ export async function GET(
   const session = await getServerSession();
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
   const token = await getUserVercelToken(session.user.id);
 
   if (!token) {
-    return NextResponse.json(
-      { error: "Vercel not connected" },
-      { status: 401 },
-    );
+    return Response.json({ error: "Vercel not connected" }, { status: 401 });
   }
 
   const { idOrName } = await params;
 
   if (!idOrName) {
-    return NextResponse.json(
+    return Response.json(
       { error: "Project id or name is required" },
       { status: 400 },
     );
@@ -111,7 +107,7 @@ export async function GET(
       "Failed to fetch Vercel project environment variables:",
       error,
     );
-    return NextResponse.json(
+    return Response.json(
       { error: "Failed to fetch Vercel project environment variables" },
       { status: 500 },
     );
