@@ -36,8 +36,12 @@ function getErrorMessage(error: unknown): string | null {
   return typeof message === "string" ? message : null;
 }
 
+function isReasoningPart(part: unknown): part is Record<string, unknown> {
+  return isRecord(part) && part.type === "reasoning";
+}
+
 function getOpenAIReasoningItemId(part: unknown): string | null {
-  if (!isRecord(part) || part.type !== "reasoning") {
+  if (!isReasoningPart(part)) {
     return null;
   }
 
@@ -121,6 +125,38 @@ function removeOpenAIReasoningItemId<T extends MessageWithParts>(
   }
 
   return removed ? nextMessages : null;
+}
+
+function removeMostRecentAssistantReasoningParts<T extends MessageWithParts>(
+  messages: T[],
+): T[] | null {
+  for (
+    let messageIndex = messages.length - 1;
+    messageIndex >= 0;
+    messageIndex--
+  ) {
+    const message = messages[messageIndex];
+    if (!message || message.role !== "assistant") {
+      continue;
+    }
+
+    if (!message.parts.some((part) => isReasoningPart(part))) {
+      continue;
+    }
+
+    const nextParts = message.parts.filter((part) => !isReasoningPart(part));
+    const nextMessages = [...messages];
+
+    if (nextParts.length === 0) {
+      nextMessages.splice(messageIndex, 1);
+    } else {
+      nextMessages[messageIndex] = { ...message, parts: nextParts } as T;
+    }
+
+    return nextMessages;
+  }
+
+  return null;
 }
 
 function arePartsEqual(left: unknown[], right: unknown[]): boolean {
@@ -215,17 +251,25 @@ export function stripInvalidOpenAIReasoningPartsForRetry<
   const targetItemId =
     itemIdFromError ?? findMostRecentOpenAIReasoningItemId(messages);
 
-  if (!targetItemId) {
-    return null;
+  const sanitizedMessagesByItemId = targetItemId
+    ? removeOpenAIReasoningItemId(messages, targetItemId)
+    : null;
+
+  if (sanitizedMessagesByItemId) {
+    return {
+      messages: sanitizedMessagesByItemId,
+      removedItemId: targetItemId ?? "most-recent-reasoning-part",
+    };
   }
 
-  const sanitizedMessages = removeOpenAIReasoningItemId(messages, targetItemId);
-  if (!sanitizedMessages) {
+  const fallbackSanitizedMessages =
+    removeMostRecentAssistantReasoningParts(messages);
+  if (!fallbackSanitizedMessages) {
     return null;
   }
 
   return {
-    messages: sanitizedMessages,
-    removedItemId: targetItemId,
+    messages: fallbackSanitizedMessages,
+    removedItemId: targetItemId ?? "most-recent-reasoning-part",
   };
 }

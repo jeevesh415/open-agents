@@ -195,12 +195,52 @@ describe("openai reasoning retry helpers", () => {
     ).toBeNull();
   });
 
-  test("returns null when the missing item id is not present in messages", () => {
+  test("falls back to stripping the most recent assistant reasoning block", () => {
+    const messages: TestMessage[] = [
+      {
+        id: "assistant-older",
+        role: "assistant",
+        parts: [reasoningPart("rs_present", "older reasoning")],
+      },
+      {
+        id: "assistant-latest",
+        role: "assistant",
+        parts: [
+          { type: "text", text: "keep this" },
+          { type: "reasoning", text: "reasoning without item metadata" },
+        ],
+      },
+    ];
+
+    const retryPayload = stripInvalidOpenAIReasoningPartsForRetry(
+      messages,
+      new Error(
+        "Item with id 'rs_missing' not found. Items are not persisted when `store` is set to false.",
+      ),
+    );
+
+    expect(retryPayload).not.toBeNull();
+    expect(retryPayload?.removedItemId).toBe("rs_missing");
+    expect(retryPayload?.messages).toEqual([
+      {
+        id: "assistant-older",
+        role: "assistant",
+        parts: [reasoningPart("rs_present", "older reasoning")],
+      },
+      {
+        id: "assistant-latest",
+        role: "assistant",
+        parts: [{ type: "text", text: "keep this" }],
+      },
+    ]);
+  });
+
+  test("returns null when fallback has no assistant reasoning to remove", () => {
     const messages: TestMessage[] = [
       {
         id: "assistant-1",
         role: "assistant",
-        parts: [reasoningPart("rs_present", "reasoning")],
+        parts: [{ type: "text", text: "plain assistant text" }],
       },
     ];
 
