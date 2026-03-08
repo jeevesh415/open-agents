@@ -396,18 +396,18 @@ export function SessionChatProvider({
   });
 
   /**
-   * Clear a transient chat error (e.g. iOS "Load failed") and attempt to
-   * resume the server-side stream if one is still active.
+   * Clear transient chat errors and recover stream state.
    *
-   * When called from a manual "Retry" button we always want to reconnect, so
-   * the stopped flag is reset.  When called from the automatic
-   * visibility-change / online recovery handler, the flag is checked first so
-   * that a user-initiated stop is respected and the stream is not silently
-   * restarted.
+   * - Automatic recoveries only attempt `resumeStream()` to reconnect to an
+   *   in-flight server stream.
+   * - Manual Retry from an error banner uses `regenerate()` so we submit a new
+   *   request when no resumable stream exists (e.g. provider hard errors).
    */
   const retryChatStream = useCallback(
     (opts?: RetryChatStreamOptions) => {
       const strategy = opts?.strategy ?? "hard";
+      const shouldRegenerate = !opts?.auto && chat.status === "error";
+
       // If the user explicitly stopped the stream, don't auto-reconnect.
       // This prevents the "tap stop 3 times" loop on iOS where aborting the
       // transport causes a transient error that the auto-recovery immediately
@@ -417,13 +417,23 @@ export function SessionChatProvider({
         chat.clearError();
         return;
       }
+
       // Manual retry — reset the flag so the stream can proceed.
       userStoppedRef.current = false;
+
       if (strategy === "hard") {
-        // Tear down any stale local fetch before reconnecting.
+        // Tear down any stale local fetch before reconnecting/regenerating.
         void chatInstance.stop();
         abortChatInstanceTransport(chatInfo.id);
       }
+
+      if (shouldRegenerate) {
+        void chat.regenerate().catch((error: unknown) => {
+          console.error("Failed to regenerate chat after retry:", error);
+        });
+        return;
+      }
+
       // Clear the error so the chat UI becomes visible again.
       chat.clearError();
       // If the server-side stream is still running, reconnect to it.
