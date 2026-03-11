@@ -81,6 +81,7 @@ import {
 import { useSessionLayout } from "@/app/sessions/[sessionId]/session-layout-context";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -215,6 +216,283 @@ interface GroupedRenderMessage {
   message: WebAgentUIMessage;
   groups: MessageRenderGroup[];
   isStreaming: boolean;
+  hiddenActivitySummary: HiddenActivitySummary;
+}
+
+type ActivityTodoSummary = {
+  total: number;
+  completed: number;
+  inProgress: number;
+};
+
+type HiddenActivitySummary = {
+  hasHiddenContent: boolean;
+  toolCallCount: number;
+  hasReasoning: boolean;
+  todo: ActivityTodoSummary | null;
+  errorCount: number;
+  deniedCount: number;
+  interruptedCount: number;
+};
+
+const EMPTY_HIDDEN_ACTIVITY_SUMMARY: HiddenActivitySummary = {
+  hasHiddenContent: false,
+  toolCallCount: 0,
+  hasReasoning: false,
+  todo: null,
+  errorCount: 0,
+  deniedCount: 0,
+  interruptedCount: 0,
+};
+
+function createHiddenActivitySummary(): HiddenActivitySummary {
+  return { ...EMPTY_HIDDEN_ACTIVITY_SUMMARY };
+}
+
+function shouldKeepTaskGroupVisible(taskParts: TaskToolUIPart[]): boolean {
+  return taskParts.some((task) => task.state === "approval-requested");
+}
+
+function shouldKeepToolPartVisibleInCompactView(
+  part: WebAgentUIToolPart,
+): boolean {
+  return part.state === "approval-requested";
+}
+
+function countCompletedToolMessages(messages: unknown): number {
+  if (!Array.isArray(messages)) {
+    return 0;
+  }
+
+  return messages.filter(
+    (message) =>
+      typeof message === "object" &&
+      message !== null &&
+      (message as { role?: string }).role === "tool",
+  ).length;
+}
+
+function isTaskToolPartForSummary(
+  part: WebAgentUIToolPart | TaskToolUIPart,
+): part is TaskToolUIPart {
+  return (
+    isObjectRecord(part.input) &&
+    typeof part.input["task"] === "string" &&
+    typeof part.input["instructions"] === "string"
+  );
+}
+
+function getHiddenToolCallCount(
+  part: WebAgentUIToolPart | TaskToolUIPart,
+): number {
+  if (!isTaskToolPartForSummary(part)) {
+    return 1;
+  }
+
+  if (part.state !== "output-available") {
+    return 0;
+  }
+
+  const output = isObjectRecord(part.output) ? part.output : null;
+  const toolCallCount = output?.["toolCallCount"];
+  if (typeof toolCallCount === "number") {
+    return toolCallCount;
+  }
+
+  if (part.preliminary) {
+    return 0;
+  }
+
+  return countCompletedToolMessages(output?.["final"]);
+}
+
+function updateHiddenToolActivitySummary(
+  summary: HiddenActivitySummary,
+  part: WebAgentUIToolPart | TaskToolUIPart,
+  isStreaming: boolean,
+): void {
+  summary.toolCallCount += getHiddenToolCallCount(part);
+
+  if (part.state === "output-error") {
+    summary.errorCount += 1;
+    return;
+  }
+
+  if (part.state === "output-denied") {
+    summary.deniedCount += 1;
+    return;
+  }
+
+  if (
+    (part.state === "input-streaming" || part.state === "input-available") &&
+    !isStreaming
+  ) {
+    summary.interruptedCount += 1;
+  }
+}
+
+function getTodoActivitySummary(
+  part: WebAgentUIToolPart,
+): ActivityTodoSummary | null {
+  if (part.type !== "tool-todo_write") {
+    return null;
+  }
+
+  const todos = part.input?.todos ?? [];
+
+  return {
+    total: todos.length,
+    completed: todos.filter((todo) => todo?.status === "completed").length,
+    inProgress: todos.filter((todo) => todo?.status === "in_progress").length,
+  };
+}
+
+function formatActivityDuration(ms: number): string {
+  if (ms < 1_000) {
+    return "<1s";
+  }
+
+  const totalSeconds = Math.floor(ms / 1_000);
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (seconds === 0) {
+    return `${minutes}m`;
+  }
+
+  return `${minutes}m ${seconds}s`;
+}
+
+function useStreamingElapsedMs(
+  isStreaming: boolean,
+  startedAtMs?: number | null,
+): number | null {
+  const fallbackStartRef = useRef<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!isStreaming) {
+      fallbackStartRef.current = null;
+      return;
+    }
+
+    if (startedAtMs == null && fallbackStartRef.current === null) {
+      fallbackStartRef.current = Date.now();
+    }
+
+    setNow(Date.now());
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1_000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isStreaming, startedAtMs]);
+
+  const effectiveStart = startedAtMs ?? fallbackStartRef.current;
+  if (!isStreaming || effectiveStart == null) {
+    return null;
+  }
+
+  return Math.max(0, now - effectiveStart);
+}
+
+function ActivityStatusBar({
+  summary,
+  isStreaming,
+  startedAtMs,
+}: {
+  summary?: HiddenActivitySummary | null;
+  isStreaming: boolean;
+  startedAtMs?: number | null;
+}) {
+  const effectiveSummary = summary ?? EMPTY_HIDDEN_ACTIVITY_SUMMARY;
+  const elapsedMs = useStreamingElapsedMs(isStreaming, startedAtMs);
+
+  let label = "Done";
+  let indicatorClassName = "bg-green-500";
+
+  if (effectiveSummary.errorCount > 0) {
+    label = "Error";
+    indicatorClassName = "bg-red-500";
+  } else if (effectiveSummary.deniedCount > 0) {
+    label = "Denied";
+    indicatorClassName = "bg-red-500";
+  } else if (effectiveSummary.interruptedCount > 0 && !isStreaming) {
+    label = "Interrupted";
+    indicatorClassName = "border border-yellow-500 bg-transparent";
+  } else if (isStreaming && effectiveSummary.toolCallCount === 0) {
+    label = effectiveSummary.hasReasoning ? "Thinking..." : "Working...";
+    indicatorClassName = "bg-yellow-500";
+  } else if (isStreaming) {
+    label = "Working...";
+    indicatorClassName = "bg-yellow-500";
+  } else if (
+    effectiveSummary.hasReasoning &&
+    effectiveSummary.toolCallCount === 0
+  ) {
+    label = "Reasoning hidden";
+    indicatorClassName = "bg-muted-foreground/60";
+  }
+
+  const details: { label: string; className?: string }[] = [];
+
+  if (elapsedMs !== null && elapsedMs > 0) {
+    details.push({
+      label: formatActivityDuration(elapsedMs),
+      className: "tabular-nums",
+    });
+  }
+
+  if (effectiveSummary.toolCallCount > 0) {
+    details.push({
+      label: `${effectiveSummary.toolCallCount} tool call${effectiveSummary.toolCallCount === 1 ? "" : "s"}`,
+      className: "tabular-nums",
+    });
+  }
+
+  if (effectiveSummary.todo && effectiveSummary.todo.total > 0) {
+    const activeSuffix =
+      effectiveSummary.todo.inProgress > 0
+        ? ` (${effectiveSummary.todo.inProgress} active)`
+        : "";
+
+    details.push({
+      label: `Todo ${effectiveSummary.todo.completed}/${effectiveSummary.todo.total}${activeSuffix}`,
+      className: "tabular-nums",
+    });
+  }
+
+  return (
+    <div className="flex justify-start">
+      <div className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-border/60 bg-secondary/30 px-3 py-1.5 text-xs text-muted-foreground">
+        <span
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            indicatorClassName,
+            isStreaming &&
+              indicatorClassName !==
+                "border border-yellow-500 bg-transparent" &&
+              "animate-pulse",
+          )}
+        />
+        <span className="font-medium text-foreground">{label}</span>
+        {details.map((detail) => (
+          <span
+            key={detail.label}
+            className="inline-flex items-center gap-2 text-muted-foreground"
+          >
+            <span className="text-muted-foreground/40">•</span>
+            <span className={detail.className}>{detail.label}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function getPartIdentity(part: WebAgentUIMessagePart): string {
@@ -867,6 +1145,7 @@ export function SessionChatContent({
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [repoDialogOpen, setRepoDialogOpen] = useState(false);
   const [showDiffPanel, setShowDiffPanel] = useState(false);
+  const [hideToolDetails, setHideToolDetails] = useState(false);
   const [mobileArchiveDialogOpen, setMobileArchiveDialogOpen] = useState(false);
   const [mobileShareOpen, setMobileShareOpen] = useState(false);
   const [chatSwitcherOpen, setChatSwitcherOpen] = useState(false);
@@ -1135,6 +1414,8 @@ export function SessionChatContent({
       let taskGroupStartIndex = 0;
       let taskGroupOrdinal = 0;
       const partIdentityCounts = new Map<string, number>();
+      const isStreaming =
+        isChatInFlight && messageIndex === renderMessages.length - 1;
 
       const getStablePartRenderKey = (part: WebAgentUIMessagePart): string => {
         const identity = getPartIdentity(part);
@@ -1186,11 +1467,57 @@ export function SessionChatContent({
 
       flushTaskGroup();
 
+      const hiddenActivitySummary = createHiddenActivitySummary();
+
+      for (const group of groups) {
+        if (group.type === "task-group") {
+          if (shouldKeepTaskGroupVisible(group.tasks)) {
+            continue;
+          }
+
+          hiddenActivitySummary.hasHiddenContent = true;
+          for (const task of group.tasks) {
+            updateHiddenToolActivitySummary(
+              hiddenActivitySummary,
+              task,
+              isStreaming,
+            );
+          }
+          continue;
+        }
+
+        const part = group.part;
+        if (isReasoningUIPart(part)) {
+          hiddenActivitySummary.hasHiddenContent = true;
+          hiddenActivitySummary.hasReasoning = true;
+          continue;
+        }
+
+        if (
+          !isToolUIPart(part) ||
+          shouldKeepToolPartVisibleInCompactView(part)
+        ) {
+          continue;
+        }
+
+        hiddenActivitySummary.hasHiddenContent = true;
+        updateHiddenToolActivitySummary(
+          hiddenActivitySummary,
+          part,
+          isStreaming,
+        );
+
+        const todoSummary = getTodoActivitySummary(part as WebAgentUIToolPart);
+        if (todoSummary) {
+          hiddenActivitySummary.todo = todoSummary;
+        }
+      }
+
       return {
         message,
         groups,
-        isStreaming:
-          isChatInFlight && messageIndex === renderMessages.length - 1,
+        isStreaming,
+        hiddenActivitySummary,
       };
     });
   }, [renderMessages, isChatInFlight]);
@@ -2544,7 +2871,12 @@ export function SessionChatContent({
               ) : null}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    aria-label="Session options"
+                  >
                     <EllipsisVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -2554,6 +2886,14 @@ export function SessionChatContent({
                     <MessageSquareMore className="mr-2 h-4 w-4" />
                     Switch Chat
                   </DropdownMenuItem>
+                  <DropdownMenuCheckboxItem
+                    checked={hideToolDetails}
+                    onCheckedChange={(checked) => {
+                      setHideToolDetails(checked === true);
+                    }}
+                  >
+                    Hide tool details
+                  </DropdownMenuCheckboxItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => setMobileShareOpen(true)}>
                     <Share2 className="mr-2 h-4 w-4" />
@@ -2757,98 +3097,260 @@ export function SessionChatContent({
           <div className="mx-auto max-w-4xl overflow-hidden px-4 py-8">
             <div className="space-y-6">
               {groupedRenderMessages.map(
-                ({ message: m, groups, isStreaming: isMessageStreaming }) => {
-                  return groups.map((group) => {
-                    if (group.type === "task-group") {
-                      return (
-                        <div
-                          key={`${m.id}-${group.renderKey}`}
-                          className="max-w-full"
-                        >
-                          <TaskGroupView
-                            taskParts={group.tasks}
-                            activeApprovalId={
-                              group.tasks.find(
-                                (t) => t.state === "approval-requested",
-                              )?.approval?.id ?? null
-                            }
-                            isStreaming={isMessageStreaming}
-                            onApprove={(id) =>
-                              addToolApprovalResponse({ id, approved: true })
-                            }
-                            onDeny={(id, reason) =>
-                              addToolApprovalResponse({
-                                id,
-                                approved: false,
-                                reason,
-                              })
-                            }
-                          />
-                        </div>
-                      );
-                    }
+                ({
+                  message: m,
+                  groups,
+                  isStreaming: isMessageStreaming,
+                  hiddenActivitySummary,
+                }) => {
+                  const showActivitySummary =
+                    hideToolDetails &&
+                    m.role === "assistant" &&
+                    hiddenActivitySummary.hasHiddenContent;
 
-                    const p = group.part;
+                  return (
+                    <div key={m.id} className="space-y-6">
+                      {showActivitySummary && (
+                        <ActivityStatusBar
+                          summary={hiddenActivitySummary}
+                          isStreaming={isMessageStreaming}
+                          startedAtMs={
+                            isMessageStreaming
+                              ? inFlightStartedAtRef.current
+                              : null
+                          }
+                        />
+                      )}
+                      {groups.map((group) => {
+                        if (group.type === "task-group") {
+                          if (
+                            hideToolDetails &&
+                            m.role === "assistant" &&
+                            !shouldKeepTaskGroupVisible(group.tasks)
+                          ) {
+                            return null;
+                          }
 
-                    if (isReasoningUIPart(p)) {
-                      return (
-                        <div
-                          key={`${m.id}-${group.renderKey}`}
-                          className="flex justify-start"
-                        >
-                          <ThinkingBlock
-                            text={p.text}
-                            isStreaming={
-                              isMessageStreaming && p.state === "streaming"
-                            }
-                          />
-                        </div>
-                      );
-                    }
+                          return (
+                            <div
+                              key={`${m.id}-${group.renderKey}`}
+                              className="max-w-full"
+                            >
+                              <TaskGroupView
+                                taskParts={group.tasks}
+                                activeApprovalId={
+                                  group.tasks.find(
+                                    (t) => t.state === "approval-requested",
+                                  )?.approval?.id ?? null
+                                }
+                                isStreaming={isMessageStreaming}
+                                onApprove={(id) =>
+                                  addToolApprovalResponse({
+                                    id,
+                                    approved: true,
+                                  })
+                                }
+                                onDeny={(id, reason) =>
+                                  addToolApprovalResponse({
+                                    id,
+                                    approved: false,
+                                    reason,
+                                  })
+                                }
+                              />
+                            </div>
+                          );
+                        }
 
-                    if (p.type === "text") {
-                      const isFinalAssistantTextPart =
-                        m.role === "assistant" &&
-                        !m.parts
-                          .slice(group.index + 1)
-                          .some((messagePart) => messagePart.type === "text");
-                      const canCopyAssistantMessage =
-                        isFinalAssistantTextPart &&
-                        !isMessageStreaming &&
-                        p.text.trim().length > 0;
+                        const p = group.part;
 
-                      return (
-                        <div
-                          key={`${m.id}-${group.renderKey}`}
-                          className={cn(
-                            "flex min-w-0",
-                            m.role === "user" ? "justify-end" : "justify-start",
-                          )}
-                        >
-                          {m.role === "user" ? (
-                            <div className="group relative w-fit min-w-0 max-w-[80%]">
-                              <div className="rounded-3xl bg-secondary px-4 py-2">
-                                <p className="whitespace-pre-wrap break-words">
-                                  {p.text}
-                                </p>
-                              </div>
-                              {group.index === 0 && (
-                                <div className="absolute -left-20 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md bg-background/80 p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void handleResendUserMessage(m.id)
+                        if (isReasoningUIPart(p)) {
+                          if (hideToolDetails && m.role === "assistant") {
+                            return null;
+                          }
+
+                          return (
+                            <div
+                              key={`${m.id}-${group.renderKey}`}
+                              className="flex justify-start"
+                            >
+                              <ThinkingBlock
+                                text={p.text}
+                                isStreaming={
+                                  isMessageStreaming && p.state === "streaming"
+                                }
+                              />
+                            </div>
+                          );
+                        }
+
+                        if (p.type === "text") {
+                          const isFinalAssistantTextPart =
+                            m.role === "assistant" &&
+                            !m.parts
+                              .slice(group.index + 1)
+                              .some(
+                                (messagePart) => messagePart.type === "text",
+                              );
+                          const canCopyAssistantMessage =
+                            isFinalAssistantTextPart &&
+                            !isMessageStreaming &&
+                            p.text.trim().length > 0;
+
+                          return (
+                            <div
+                              key={`${m.id}-${group.renderKey}`}
+                              className={cn(
+                                "flex min-w-0",
+                                m.role === "user"
+                                  ? "justify-end"
+                                  : "justify-start",
+                              )}
+                            >
+                              {m.role === "user" ? (
+                                <div className="group relative w-fit min-w-0 max-w-[80%]">
+                                  <div className="rounded-3xl bg-secondary px-4 py-2">
+                                    <p className="whitespace-pre-wrap break-words">
+                                      {p.text}
+                                    </p>
+                                  </div>
+                                  {group.index === 0 && (
+                                    <div className="absolute -left-20 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md bg-background/80 p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void handleResendUserMessage(m.id)
+                                        }
+                                        disabled={hasMessageActionInFlight}
+                                        aria-label="Resend this message and delete everything after it"
+                                        className="rounded p-1 transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                                      >
+                                        {resendingMessageId === m.id ? (
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <RotateCcw className="h-4 w-4" />
+                                        )}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void handleDeleteUserMessage(m.id)
+                                        }
+                                        disabled={hasMessageActionInFlight}
+                                        aria-label="Delete this message and everything after it"
+                                        className="rounded p-1 transition hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
+                                      >
+                                        {deletingMessageId === m.id ? (
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <Trash2 className="h-4 w-4" />
+                                        )}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="group min-w-0 w-full overflow-hidden">
+                                  <Streamdown
+                                    animated={
+                                      isMessageStreaming
+                                        ? {
+                                            animation: "fadeIn",
+                                            duration: 250,
+                                            easing: "ease-out",
+                                          }
+                                        : undefined
                                     }
-                                    disabled={hasMessageActionInFlight}
-                                    aria-label="Resend this message and delete everything after it"
-                                    className="rounded p-1 transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                                    mode={
+                                      isMessageStreaming
+                                        ? "streaming"
+                                        : "static"
+                                    }
+                                    isAnimating={isMessageStreaming}
+                                    plugins={streamdownPlugins}
                                   >
-                                    {resendingMessageId === m.id ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <RotateCcw className="h-4 w-4" />
-                                    )}
-                                  </button>
+                                    {p.text}
+                                  </Streamdown>
+                                  {canCopyAssistantMessage && (
+                                    <div className="mt-1 flex justify-start">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void handleCopyAssistantMessage(
+                                            m.id,
+                                            p.text,
+                                          )
+                                        }
+                                        aria-label="Copy assistant response"
+                                        className="rounded p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+                                      >
+                                        {copiedAssistantMessageId === m.id ? (
+                                          <Check className="h-4 w-4" />
+                                        ) : (
+                                          <Copy className="h-4 w-4" />
+                                        )}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (isToolUIPart(p)) {
+                          if (
+                            hideToolDetails &&
+                            m.role === "assistant" &&
+                            !shouldKeepToolPartVisibleInCompactView(p)
+                          ) {
+                            return null;
+                          }
+
+                          return (
+                            <div
+                              key={`${m.id}-${group.renderKey}`}
+                              className="max-w-full"
+                            >
+                              <ToolCall
+                                part={p as WebAgentUIToolPart}
+                                isStreaming={isMessageStreaming}
+                                onApprove={(id) =>
+                                  addToolApprovalResponse({
+                                    id,
+                                    approved: true,
+                                  })
+                                }
+                                onDeny={(id, reason) =>
+                                  addToolApprovalResponse({
+                                    id,
+                                    approved: false,
+                                    reason,
+                                  })
+                                }
+                              />
+                            </div>
+                          );
+                        }
+
+                        // Render image attachments
+                        if (
+                          p.type === "file" &&
+                          p.mediaType?.startsWith("image/")
+                        ) {
+                          return (
+                            <div
+                              key={`${m.id}-${group.renderKey}`}
+                              className="flex justify-end"
+                            >
+                              <div className="group relative w-fit max-w-[80%]">
+                                {/* eslint-disable-next-line @next/next/no-img-element -- Data URLs not supported by next/image */}
+                                <img
+                                  src={p.url}
+                                  alt={p.filename ?? "Attached image"}
+                                  className="max-h-64 rounded-lg"
+                                />
+                                {m.role === "user" && group.index === 0 && (
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -2856,7 +3358,7 @@ export function SessionChatContent({
                                     }
                                     disabled={hasMessageActionInFlight}
                                     aria-label="Delete this message and everything after it"
-                                    className="rounded p-1 transition hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
+                                    className="absolute -left-10 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
                                   >
                                     {deletingMessageId === m.id ? (
                                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -2864,128 +3366,29 @@ export function SessionChatContent({
                                       <Trash2 className="h-4 w-4" />
                                     )}
                                   </button>
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="group min-w-0 w-full overflow-hidden">
-                              <Streamdown
-                                animated={
-                                  isMessageStreaming
-                                    ? {
-                                        animation: "fadeIn",
-                                        duration: 250,
-                                        easing: "ease-out",
-                                      }
-                                    : undefined
-                                }
-                                mode={
-                                  isMessageStreaming ? "streaming" : "static"
-                                }
-                                isAnimating={isMessageStreaming}
-                                plugins={streamdownPlugins}
-                              >
-                                {p.text}
-                              </Streamdown>
-                              {canCopyAssistantMessage && (
-                                <div className="mt-1 flex justify-start">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void handleCopyAssistantMessage(
-                                        m.id,
-                                        p.text,
-                                      )
-                                    }
-                                    aria-label="Copy assistant response"
-                                    className="rounded p-1 text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
-                                  >
-                                    {copiedAssistantMessageId === m.id ? (
-                                      <Check className="h-4 w-4" />
-                                    ) : (
-                                      <Copy className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-
-                    if (isToolUIPart(p)) {
-                      return (
-                        <div
-                          key={`${m.id}-${group.renderKey}`}
-                          className="max-w-full"
-                        >
-                          <ToolCall
-                            part={p as WebAgentUIToolPart}
-                            isStreaming={isMessageStreaming}
-                            onApprove={(id) =>
-                              addToolApprovalResponse({ id, approved: true })
-                            }
-                            onDeny={(id, reason) =>
-                              addToolApprovalResponse({
-                                id,
-                                approved: false,
-                                reason,
-                              })
-                            }
-                          />
-                        </div>
-                      );
-                    }
-
-                    // Render image attachments
-                    if (
-                      p.type === "file" &&
-                      p.mediaType?.startsWith("image/")
-                    ) {
-                      return (
-                        <div
-                          key={`${m.id}-${group.renderKey}`}
-                          className="flex justify-end"
-                        >
-                          <div className="group relative w-fit max-w-[80%]">
-                            {/* eslint-disable-next-line @next/next/no-img-element -- Data URLs not supported by next/image */}
-                            <img
-                              src={p.url}
-                              alt={p.filename ?? "Attached image"}
-                              className="max-h-64 rounded-lg"
-                            />
-                            {m.role === "user" && group.index === 0 && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void handleDeleteUserMessage(m.id)
-                                }
-                                disabled={hasMessageActionInFlight}
-                                aria-label="Delete this message and everything after it"
-                                className="absolute -left-10 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
-                              >
-                                {deletingMessageId === m.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-4 w-4" />
                                 )}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    }
+                              </div>
+                            </div>
+                          );
+                        }
 
-                    return null;
-                  });
+                        return null;
+                      })}
+                    </div>
+                  );
                 },
               )}
-              {showThinkingIndicator && (
-                <div className="flex justify-start">
-                  <ThinkingBlock text="" isStreaming />
-                </div>
-              )}
+              {showThinkingIndicator &&
+                (hideToolDetails ? (
+                  <ActivityStatusBar
+                    isStreaming
+                    startedAtMs={inFlightStartedAtRef.current}
+                  />
+                ) : (
+                  <div className="flex justify-start">
+                    <ThinkingBlock text="" isStreaming />
+                  </div>
+                ))}
             </div>
           </div>
         </div>
