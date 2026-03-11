@@ -40,6 +40,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import useSWR from "swr";
+import { toast } from "sonner";
 import type { MergePullRequestResponse } from "@/app/api/sessions/[sessionId]/merge/route";
 import type { PrDeploymentResponse } from "@/app/api/sessions/[sessionId]/pr-deployment/route";
 import type {
@@ -152,6 +153,19 @@ const STREAM_RECOVERY_STALL_MS = 4_000;
 const STREAM_RECOVERY_MIN_INTERVAL_MS = 8_000;
 
 const emptySubscribe = () => () => {};
+
+type AutoCommitPushStatus =
+  | "blocked"
+  | "disabled"
+  | "failed"
+  | "not-applicable"
+  | "nothing-to-commit"
+  | "ran";
+
+type AutoCommitPushResult = {
+  status: AutoCommitPushStatus;
+  errorMessage?: string;
+};
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -1220,6 +1234,7 @@ export function SessionChatContent({
   const streamRecoveryProbeInFlightRef = useRef(false);
   const autoCommitInFlightRef = useRef(false);
   const [isAutoCommitting, setIsAutoCommitting] = useState(false);
+  const [pendingAutoCommitTurn, setPendingAutoCommitTurn] = useState(0);
   const cachedDefaultBaseBranchRef = useRef<string | null>(null);
 
   const requestStatusSync = useCallback(
@@ -1266,28 +1281,29 @@ export function SessionChatContent({
   const maybeAutoCommitPush = useCallback(
     async (
       latestStatus?: SessionGitStatus | null,
-    ): Promise<{ ran: boolean }> => {
+    ): Promise<AutoCommitPushResult> => {
       if (!preferences?.autoCommitPush) {
-        return { ran: false };
+        return { status: "disabled" };
       }
 
-      if (
-        !session.cloneUrl ||
-        !session.repoOwner ||
-        !session.repoName ||
-        !sandboxInfo ||
-        autoCommitInFlightRef.current
-      ) {
-        return { ran: false };
+      if (!session.cloneUrl || !session.repoOwner || !session.repoName) {
+        return { status: "not-applicable" };
+      }
+
+      if (!isSandboxValid(sandboxInfo) || autoCommitInFlightRef.current) {
+        return { status: "blocked" };
       }
 
       const statusSnapshot = latestStatus ?? gitStatus;
+      if (!statusSnapshot) {
+        return { status: "blocked" };
+      }
+
       const hasPendingGitWork =
-        (statusSnapshot?.hasUncommittedChanges ?? false) ||
-        (statusSnapshot?.hasUnpushedCommits ?? false);
+        statusSnapshot.hasUncommittedChanges || statusSnapshot.hasUnpushedCommits;
 
       if (!hasPendingGitWork) {
-        return { ran: false };
+        return { status: "nothing-to-commit" };
       }
 
       autoCommitInFlightRef.current = true;
@@ -1297,7 +1313,7 @@ export function SessionChatContent({
       try {
         const baseBranch = await resolveDefaultBaseBranch();
         const branchName =
-          statusSnapshot?.branch ?? session.branch ?? baseBranch ?? "HEAD";
+          statusSnapshot.branch ?? session.branch ?? baseBranch ?? "HEAD";
 
         await commitAndPushSessionChanges({
           sessionId: session.id,
@@ -1311,10 +1327,14 @@ export function SessionChatContent({
         await refreshFiles().catch(() => undefined);
         await checkBranchAndPr();
 
-        return { ran: true };
+        return { status: "ran" };
       } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : "Failed to auto commit and push changes";
         console.error("Failed to auto commit and push changes:", error);
-        return { ran: false };
+        return { status: "failed", errorMessage };
       } finally {
         autoCommitInFlightRef.current = false;
         if (isMountedRef.current) {
@@ -2007,32 +2027,63 @@ export function SessionChatContent({
       status === "ready" &&
       isMountedRef.current
     ) {
-      void (async () => {
-        await requestStatusSync("force");
-        const latestGitStatus = await refreshGitStatus().catch(() => undefined);
-        const autoCommitResult = await maybeAutoCommitPush(latestGitStatus);
-
-        if (!autoCommitResult.ran) {
-          // After a message completes, check branch and detect existing PRs
-          await checkBranchAndPr();
-        }
-
-        await requestMarkChatRead("force");
-        await refreshChats();
-      })();
+      setPendingAutoCommitTurn((currentTurn) => currentTurn + 1);
+      void requestMarkChatRead("force");
+      void refreshChats();
     }
   }, [
     status,
     chatInfo.id,
     setChatStreaming,
     clearChatTitle,
-    requestStatusSync,
-    refreshGitStatus,
     requestMarkChatRead,
     refreshChats,
-    checkBranchAndPr,
+  ]);
+
+  useEffect(() => {
+    if (pendingAutoCommitTurn === 0 || status !== "ready") {
+      return;
+    }
+
+    const currentTurn = pendingAutoCommitTurn;
+    let cancelled = false;
+
+    void (async () => {
+      await requestStatusSync("force").catch(() => undefined);
+      const latestGitStatus = await refreshGitStatus().catch(() => undefined);
+      const autoCommitResult = await maybeAutoCommitPush(latestGitStatus);
+
+      if (cancelled || autoCommitResult.status === "blocked") {
+        return;
+      }
+
+      if (autoCommitResult.status === "failed") {
+        toast.error("Auto commit failed", {
+          description: autoCommitResult.errorMessage,
+        });
+      }
+
+      if (autoCommitResult.status !== "ran") {
+        await checkBranchAndPr().catch(() => undefined);
+      }
+
+      if (!cancelled) {
+        setPendingAutoCommitTurn((latestTurn) =>
+          latestTurn === currentTurn ? 0 : latestTurn,
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    pendingAutoCommitTurn,
+    status,
+    requestStatusSync,
+    refreshGitStatus,
     maybeAutoCommitPush,
-    router,
+    checkBranchAndPr,
   ]);
 
   // Track whether we've auto-attempted sandbox startup for this page load.
