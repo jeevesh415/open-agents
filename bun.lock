@@ -134,6 +134,25 @@
         "typescript": "^5",
       },
     },
+    "packages/durable-agent": {
+      "name": "@open-harness/durable-agent",
+      "version": "0.0.0",
+      "dependencies": {
+        "@open-harness/agent": "workspace:*",
+        "@open-harness/sandbox": "workspace:*",
+        "ai": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@open-harness/tsconfig": "workspace:*",
+        "@types/bun": "latest",
+        "@types/node": "^22",
+        "oxlint": "^1.38.0",
+      },
+      "peerDependencies": {
+        "typescript": "^5",
+      },
+    },
     "packages/sandbox": {
       "name": "@open-harness/sandbox",
       "version": "0.0.0",
@@ -612,6 +631,8 @@
     "@open-harness/agent": ["@open-harness/agent@workspace:packages/agent"],
 
     "@open-harness/cli": ["@open-harness/cli@workspace:apps/cli"],
+
+    "@open-harness/durable-agent": ["@open-harness/durable-agent@workspace:packages/durable-agent"],
 
     "@open-harness/sandbox": ["@open-harness/sandbox@workspace:packages/sandbox"],
 

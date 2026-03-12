@@ -28,6 +28,12 @@ export {
   type AskUserQuestionToolUIPart,
 } from "./tools/ask-user-question";
 export type { SkillToolInput } from "./tools/skill";
+export {
+  bashTool,
+  editFileTool,
+  readFileTool,
+  writeFileTool,
+} from "./tools";
 // Tool exports
 export type {
   TaskPendingToolCall,
