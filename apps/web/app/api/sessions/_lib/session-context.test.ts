@@ -37,7 +37,9 @@ mock.module("@/lib/db/sessions", () => ({
 
 const sessionContextModulePromise = import("./session-context");
 
-async function getErrorMessage(response: Response): Promise<string | undefined> {
+async function getErrorMessage(
+  response: Response,
+): Promise<string | undefined> {
   const body = (await response.json()) as { error?: string };
   return body.error;
 }
@@ -180,7 +182,9 @@ describe("session context guards", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.response.status).toBe(400);
-      expect(await getErrorMessage(result.response)).toBe("Sandbox not initialized");
+      expect(await getErrorMessage(result.response)).toBe(
+        "Sandbox not initialized",
+      );
     }
   });
 

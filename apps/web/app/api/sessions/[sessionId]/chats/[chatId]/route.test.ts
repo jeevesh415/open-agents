@@ -41,7 +41,10 @@ let updatedChat: ChatRecord | null = {
   title: "Updated",
   modelId: "model-updated",
 };
-let chatsInSession: Array<{ id: string }> = [{ id: "chat-1" }, { id: "chat-2" }];
+let chatsInSession: Array<{ id: string }> = [
+  { id: "chat-1" },
+  { id: "chat-2" },
+];
 
 const updateChatCalls: Array<{
   chatId: string;
@@ -110,7 +113,10 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     };
     const { PATCH } = await routeModulePromise;
 
-    const response = await PATCH(createPatchRequest({ title: "x" }), createContext());
+    const response = await PATCH(
+      createPatchRequest({ title: "x" }),
+      createContext(),
+    );
 
     expect(response.status).toBe(401);
     expect(updateChatCalls).toHaveLength(0);
@@ -123,7 +129,10 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     };
     const { PATCH } = await routeModulePromise;
 
-    const response = await PATCH(createPatchRequest({ title: "x" }), createContext());
+    const response = await PATCH(
+      createPatchRequest({ title: "x" }),
+      createContext(),
+    );
 
     expect(response.status).toBe(404);
     expect(updateChatCalls).toHaveLength(0);
@@ -149,7 +158,10 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
   test("PATCH returns 400 when neither title nor modelId is provided", async () => {
     const { PATCH } = await routeModulePromise;
 
-    const response = await PATCH(createPatchRequest({ title: "   " }), createContext());
+    const response = await PATCH(
+      createPatchRequest({ title: "   " }),
+      createContext(),
+    );
     const body = (await response.json()) as { error: string };
 
     expect(response.status).toBe(400);
@@ -180,7 +192,10 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     updatedChat = null;
     const { PATCH } = await routeModulePromise;
 
-    const response = await PATCH(createPatchRequest({ title: "New" }), createContext());
+    const response = await PATCH(
+      createPatchRequest({ title: "New" }),
+      createContext(),
+    );
     const body = (await response.json()) as { error: string };
 
     expect(response.status).toBe(404);
