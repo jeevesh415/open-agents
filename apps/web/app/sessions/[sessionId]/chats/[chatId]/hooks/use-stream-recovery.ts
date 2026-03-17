@@ -38,8 +38,12 @@ export function useStreamRecovery({
   // Keep the recovery logic in a ref so event-listener effects never
   // churn during streaming. The ref is updated on every render (cheap) while
   // the stable wrapper below keeps a constant identity for effects.
-  const maybeRecoverStreamRef = useRef((_opts?: { isVisibilityRecovery?: boolean }) => {});
-  maybeRecoverStreamRef.current = (opts?: { isVisibilityRecovery?: boolean }) => {
+  const maybeRecoverStreamRef = useRef(
+    (_opts?: { isVisibilityRecovery?: boolean }) => {},
+  );
+  maybeRecoverStreamRef.current = (opts?: {
+    isVisibilityRecovery?: boolean;
+  }) => {
     const now = Date.now();
     const recoveryDecision = getStreamRecoveryDecision({
       now,
