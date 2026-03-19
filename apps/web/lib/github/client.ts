@@ -585,6 +585,7 @@ export async function createPullRequest(params: {
   title: string;
   body?: string;
   baseBranch?: string;
+  isDraft?: boolean;
   token?: string;
 }): Promise<{
   success: boolean;
@@ -599,6 +600,7 @@ export async function createPullRequest(params: {
     title,
     body = "",
     baseBranch = "main",
+    isDraft = false,
     token,
   } = params;
 
@@ -623,6 +625,7 @@ export async function createPullRequest(params: {
       body,
       head: headRef ?? branchName,
       base: baseBranch,
+      draft: isDraft,
     });
 
     return {
