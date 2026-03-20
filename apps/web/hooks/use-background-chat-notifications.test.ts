@@ -1,122 +1,210 @@
 import { describe, expect, test } from "bun:test";
 import {
-  detectCompletedSessions,
-  getStreamingIds,
+  COMPLETION_PERSISTENCE_TIMEOUT_MS,
+  detectStoppedSessionsAwaitingPersistence,
+  hasPersistedAssistantAdvanced,
+  resolvePendingCompletionCandidates,
 } from "./use-background-chat-notifications";
 
-describe("getStreamingIds", () => {
-  test("returns empty set when no items are streaming", () => {
-    const items = [
-      { id: "a", streaming: false },
-      { id: "b", streaming: false },
-    ];
-    expect(getStreamingIds(items)).toEqual(new Set());
+function makeItem(
+  id: string,
+  options?: {
+    streaming?: boolean;
+    latestAssistantMessageAt?: string | null;
+  },
+) {
+  return {
+    id,
+    streaming: options?.streaming ?? false,
+    latestAssistantMessageAt: options?.latestAssistantMessageAt ?? null,
+  };
+}
+
+describe("hasPersistedAssistantAdvanced", () => {
+  test("returns false when there is still no persisted assistant timestamp", () => {
+    expect(hasPersistedAssistantAdvanced(null, null)).toBe(false);
   });
 
-  test("returns only streaming item IDs", () => {
-    const items = [
-      { id: "a", streaming: true },
-      { id: "b", streaming: false },
-      { id: "c", streaming: true },
-    ];
-    expect(getStreamingIds(items)).toEqual(new Set(["a", "c"]));
+  test("returns true when the first assistant timestamp appears", () => {
+    expect(
+      hasPersistedAssistantAdvanced(null, "2026-03-20T10:00:00.000Z"),
+    ).toBe(true);
   });
 
-  test("handles empty list", () => {
-    expect(getStreamingIds([])).toEqual(new Set());
+  test("returns true when the assistant timestamp moves forward", () => {
+    expect(
+      hasPersistedAssistantAdvanced(
+        "2026-03-20T10:00:00.000Z",
+        "2026-03-20T10:00:03.000Z",
+      ),
+    ).toBe(true);
+  });
+
+  test("returns false when the assistant timestamp is unchanged", () => {
+    expect(
+      hasPersistedAssistantAdvanced(
+        "2026-03-20T10:00:00.000Z",
+        "2026-03-20T10:00:00.000Z",
+      ),
+    ).toBe(false);
   });
 });
 
-describe("detectCompletedSessions", () => {
-  test("detects a session that stopped streaming", () => {
-    const prev = new Set(["s1"]);
-    const items = [
-      { id: "s1", streaming: false },
-      { id: "s2", streaming: false },
-    ];
-    const result = detectCompletedSessions(prev, items, "s2");
-    expect(result).toEqual(["s1"]);
+describe("detectStoppedSessionsAwaitingPersistence", () => {
+  test("reports an immediate completion when persistence already landed", () => {
+    const result = detectStoppedSessionsAwaitingPersistence(
+      [
+        makeItem("session-1", {
+          streaming: true,
+          latestAssistantMessageAt: null,
+        }),
+      ],
+      [
+        makeItem("session-1", {
+          streaming: false,
+          latestAssistantMessageAt: "2026-03-20T10:00:02.000Z",
+        }),
+      ],
+      null,
+    );
+
+    expect(result).toEqual({
+      completedIds: ["session-1"],
+      awaitingPersistence: [],
+    });
   });
 
-  test("does not report the active session", () => {
-    const prev = new Set(["s1"]);
-    const items = [
-      { id: "s1", streaming: false },
-      { id: "s2", streaming: false },
-    ];
-    // s1 stopped streaming but is the active session — should be excluded
-    const result = detectCompletedSessions(prev, items, "s1");
-    expect(result).toEqual([]);
+  test("keeps waiting when the stream stopped but the assistant is not persisted yet", () => {
+    const result = detectStoppedSessionsAwaitingPersistence(
+      [
+        makeItem("session-1", {
+          streaming: true,
+          latestAssistantMessageAt: "2026-03-20T09:59:00.000Z",
+        }),
+      ],
+      [
+        makeItem("session-1", {
+          streaming: false,
+          latestAssistantMessageAt: "2026-03-20T09:59:00.000Z",
+        }),
+      ],
+      null,
+    );
+
+    expect(result).toEqual({
+      completedIds: [],
+      awaitingPersistence: [
+        {
+          id: "session-1",
+          baselineAssistantMessageAt: "2026-03-20T09:59:00.000Z",
+        },
+      ],
+    });
   });
 
-  test("does not report sessions still streaming", () => {
-    const prev = new Set(["s1", "s2"]);
-    const items = [
-      { id: "s1", streaming: true },
-      { id: "s2", streaming: false },
-    ];
-    const result = detectCompletedSessions(prev, items, null);
-    // s1 still streaming, only s2 completed
-    expect(result).toEqual(["s2"]);
+  test("ignores the active session", () => {
+    const result = detectStoppedSessionsAwaitingPersistence(
+      [
+        makeItem("session-1", {
+          streaming: true,
+          latestAssistantMessageAt: null,
+        }),
+      ],
+      [
+        makeItem("session-1", {
+          streaming: false,
+          latestAssistantMessageAt: null,
+        }),
+      ],
+      "session-1",
+    );
+
+    expect(result).toEqual({
+      completedIds: [],
+      awaitingPersistence: [],
+    });
+  });
+});
+
+describe("resolvePendingCompletionCandidates", () => {
+  test("completes a pending notification once the assistant timestamp advances", () => {
+    const pendingCandidates = new Map([
+      [
+        "session-1",
+        {
+          baselineAssistantMessageAt: "2026-03-20T10:00:00.000Z",
+          waitingSinceMs: 1_000,
+        },
+      ],
+    ]);
+
+    const result = resolvePendingCompletionCandidates(
+      pendingCandidates,
+      [
+        makeItem("session-1", {
+          streaming: false,
+          latestAssistantMessageAt: "2026-03-20T10:00:02.000Z",
+        }),
+      ],
+      null,
+      5_000,
+    );
+
+    expect(result.completedIds).toEqual(["session-1"]);
+    expect(result.nextPendingCandidates.size).toBe(0);
   });
 
-  test("returns empty when nothing was previously streaming", () => {
-    const prev = new Set<string>();
-    const items = [
-      { id: "s1", streaming: false },
-      { id: "s2", streaming: false },
-    ];
-    const result = detectCompletedSessions(prev, items, null);
-    expect(result).toEqual([]);
+  test("drops a pending notification after the timeout without firing", () => {
+    const pendingCandidates = new Map([
+      [
+        "session-1",
+        {
+          baselineAssistantMessageAt: null,
+          waitingSinceMs: 1_000,
+        },
+      ],
+    ]);
+
+    const result = resolvePendingCompletionCandidates(
+      pendingCandidates,
+      [
+        makeItem("session-1", {
+          streaming: false,
+          latestAssistantMessageAt: null,
+        }),
+      ],
+      null,
+      1_000 + COMPLETION_PERSISTENCE_TIMEOUT_MS + 1,
+    );
+
+    expect(result.completedIds).toEqual([]);
+    expect(result.nextPendingCandidates.size).toBe(0);
   });
 
-  test("returns empty when all previously streaming sessions are still streaming", () => {
-    const prev = new Set(["s1", "s2"]);
-    const items = [
-      { id: "s1", streaming: true },
-      { id: "s2", streaming: true },
-    ];
-    const result = detectCompletedSessions(prev, items, null);
-    expect(result).toEqual([]);
-  });
+  test("keeps pending sessions that are still waiting for persisted data", () => {
+    const pendingCandidates = new Map([
+      [
+        "session-1",
+        {
+          baselineAssistantMessageAt: null,
+          waitingSinceMs: 1_000,
+        },
+      ],
+    ]);
 
-  test("detects multiple sessions completing at once", () => {
-    const prev = new Set(["s1", "s2", "s3"]);
-    const items = [
-      { id: "s1", streaming: false },
-      { id: "s2", streaming: false },
-      { id: "s3", streaming: true },
-    ];
-    const result = detectCompletedSessions(prev, items, null);
-    expect(result).toEqual(["s1", "s2"]);
-  });
+    const result = resolvePendingCompletionCandidates(
+      pendingCandidates,
+      [
+        makeItem("session-1", {
+          streaming: false,
+          latestAssistantMessageAt: null,
+        }),
+      ],
+      null,
+      5_000,
+    );
 
-  test("ignores sessions that were never streaming", () => {
-    const prev = new Set(["s2"]);
-    const items = [
-      { id: "s1", streaming: false },
-      { id: "s2", streaming: false },
-    ];
-    // s1 was never streaming, should not appear
-    const result = detectCompletedSessions(prev, items, null);
-    expect(result).toEqual(["s2"]);
-  });
-
-  test("handles active session being null", () => {
-    const prev = new Set(["s1"]);
-    const items = [{ id: "s1", streaming: false }];
-    const result = detectCompletedSessions(prev, items, null);
-    expect(result).toEqual(["s1"]);
-  });
-
-  test("excludes only the active session when multiple complete", () => {
-    const prev = new Set(["s1", "s2", "s3"]);
-    const items = [
-      { id: "s1", streaming: false },
-      { id: "s2", streaming: false },
-      { id: "s3", streaming: false },
-    ];
-    const result = detectCompletedSessions(prev, items, "s2");
-    expect(result).toEqual(["s1", "s3"]);
+    expect(result.completedIds).toEqual([]);
+    expect(result.nextPendingCandidates).toEqual(pendingCandidates);
   });
 });

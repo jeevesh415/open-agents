@@ -17,6 +17,7 @@ import { getAllVariants } from "@/lib/model-variants";
 import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getInitialIsOnlyChatInSession } from "./only-chat-in-session";
+import { shouldAwaitPersistedAssistant } from "./persisted-response-recovery";
 import { SessionChatContent } from "./session-chat-content";
 import { SessionChatProvider } from "./session-chat-context";
 
@@ -149,6 +150,10 @@ export default async function SessionChatPage({
   const lastUserMessageSentAt = lastUserMessage
     ? lastUserMessage.createdAt.toISOString()
     : null;
+  const initialAwaitingPersistedAssistant = shouldAwaitPersistedAssistant({
+    chat,
+    messages: dbMessages,
+  });
   const initialModelOptions = withMissingModelOption(
     buildSessionChatModelOptions(
       initialModels,
@@ -172,6 +177,7 @@ export default async function SessionChatPage({
       >
         <SessionChatContent
           initialIsOnlyChatInSession={initialIsOnlyChatInSession}
+          initialAwaitingPersistedAssistant={initialAwaitingPersistedAssistant}
           messageDurationMap={messageDurationMap}
           messageStartedAtMap={messageStartedAtMap}
           lastUserMessageSentAt={lastUserMessageSentAt}

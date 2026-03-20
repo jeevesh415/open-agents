@@ -70,6 +70,7 @@ export function SessionsRouteShell({
     createSession,
     renameSession,
     archiveSession,
+    refreshSessions,
   } = useSessions({
     enabled: true,
     includeArchived: false,
@@ -144,7 +145,12 @@ export function SessionsRouteShell({
   const activeSessionId = optimisticActiveSessionId ?? routeSessionId ?? "";
   const pendingSessionId = isNavigating ? optimisticActiveSessionId : null;
 
-  useBackgroundChatNotifications(sessions, routeSessionId, handleSessionClick);
+  useBackgroundChatNotifications(
+    sessions,
+    routeSessionId,
+    handleSessionClick,
+    () => refreshSessions(),
+  );
 
   const shellContextValue = useMemo(
     () => ({

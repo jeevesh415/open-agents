@@ -150,6 +150,7 @@ export type SessionWithUnread = SessionSidebarFields & {
   hasStreaming: boolean;
   latestChatId: string | null;
   lastActivityAt: Date;
+  latestAssistantMessageAt: Date | null;
 };
 
 type GetSessionsWithUnreadByUserIdOptions = {
@@ -191,6 +192,7 @@ export async function getSessionsWithUnreadByUserId(
       prStatus: sessions.prStatus,
       createdAt: sessions.createdAt,
       lastActivityAt: sql<Date>`COALESCE(MAX(${chats.updatedAt}), ${sessions.createdAt})`,
+      latestAssistantMessageAt: sql<Date | null>`MAX(${chats.lastAssistantMessageAt})`,
       hasUnread: sql<boolean>`COALESCE(BOOL_OR(
         CASE
           WHEN ${chats.lastAssistantMessageAt} IS NULL THEN false

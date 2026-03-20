@@ -23,6 +23,7 @@ export type SessionWithUnread = Pick<
   hasStreaming: boolean;
   latestChatId: string | null;
   lastActivityAt: Session["createdAt"];
+  latestAssistantMessageAt: Session["createdAt"] | null;
 };
 
 interface CreateSessionInput {
@@ -79,6 +80,7 @@ function mergeSessionWithSummary(
     hasStreaming: session.hasStreaming,
     latestChatId: session.latestChatId,
     lastActivityAt: session.lastActivityAt,
+    latestAssistantMessageAt: session.latestAssistantMessageAt,
   };
 }
 
@@ -174,6 +176,7 @@ export function useSessions(options?: {
                 hasStreaming: false,
                 latestChatId: createdChat.id,
                 lastActivityAt: createdChat.updatedAt,
+                latestAssistantMessageAt: null,
               },
               ...(source?.sessions ?? []),
             ],

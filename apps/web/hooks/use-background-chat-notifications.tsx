@@ -1,12 +1,23 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { SessionWithUnread } from "@/hooks/use-sessions";
 
-type StreamingItem = { id: string; streaming: boolean };
+type SessionNotificationItem = {
+  id: string;
+  streaming: boolean;
+  latestAssistantMessageAt: string | null;
+};
+
+type PendingCompletionCandidate = {
+  baselineAssistantMessageAt: string | null;
+  waitingSinceMs: number;
+};
 
 const FINISHED_CHAT_SOUND_PATH = "/Submarine.wav";
+export const COMPLETION_PERSISTENCE_POLL_MS = 1_500;
+export const COMPLETION_PERSISTENCE_TIMEOUT_MS = 20_000;
 
 function playFinishedChatSound() {
   if (typeof window === "undefined" || typeof window.Audio === "undefined") {
@@ -17,73 +28,213 @@ function playFinishedChatSound() {
   audio.play().catch(() => undefined);
 }
 
-/**
- * Pure detection logic: given the previous set of streaming IDs and the current
- * list of items, return the IDs that just stopped streaming and are not the
- * active item.
- */
-export function detectCompletedSessions(
-  prevStreamingIds: Set<string>,
-  items: StreamingItem[],
-  activeId: string | null,
-): string[] {
-  const currentlyStreaming = new Set(
-    items.filter((s) => s.streaming).map((s) => s.id),
-  );
-
-  const completed: string[] = [];
-  for (const id of prevStreamingIds) {
-    if (!currentlyStreaming.has(id) && id !== activeId) {
-      completed.push(id);
-    }
+function toAssistantTimestamp(
+  value: SessionWithUnread["latestAssistantMessageAt"],
+): string | null {
+  if (!value) {
+    return null;
   }
-  return completed;
+
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function toNotificationItems(
+  sessions: SessionWithUnread[],
+): SessionNotificationItem[] {
+  return sessions.map((session) => ({
+    id: session.id,
+    streaming: session.hasStreaming,
+    latestAssistantMessageAt: toAssistantTimestamp(
+      session.latestAssistantMessageAt,
+    ),
+  }));
+}
+
+export function hasPersistedAssistantAdvanced(
+  previous: string | null,
+  current: string | null,
+): boolean {
+  if (!current) {
+    return false;
+  }
+
+  if (!previous) {
+    return true;
+  }
+
+  const previousMs = Date.parse(previous);
+  const currentMs = Date.parse(current);
+  if (Number.isNaN(previousMs) || Number.isNaN(currentMs)) {
+    return current !== previous;
+  }
+
+  return currentMs > previousMs;
+}
+
+export function detectStoppedSessionsAwaitingPersistence(
+  previousItems: SessionNotificationItem[],
+  currentItems: SessionNotificationItem[],
+  activeId: string | null,
+): {
+  completedIds: string[];
+  awaitingPersistence: Array<{
+    id: string;
+    baselineAssistantMessageAt: string | null;
+  }>;
+} {
+  const previousById = new Map(previousItems.map((item) => [item.id, item]));
+  const completedIds: string[] = [];
+  const awaitingPersistence: Array<{
+    id: string;
+    baselineAssistantMessageAt: string | null;
+  }> = [];
+
+  for (const item of currentItems) {
+    const previous = previousById.get(item.id);
+    if (
+      !previous ||
+      !previous.streaming ||
+      item.streaming ||
+      item.id === activeId
+    ) {
+      continue;
+    }
+
+    if (
+      hasPersistedAssistantAdvanced(
+        previous.latestAssistantMessageAt,
+        item.latestAssistantMessageAt,
+      )
+    ) {
+      completedIds.push(item.id);
+      continue;
+    }
+
+    awaitingPersistence.push({
+      id: item.id,
+      baselineAssistantMessageAt: previous.latestAssistantMessageAt,
+    });
+  }
+
+  return {
+    completedIds,
+    awaitingPersistence,
+  };
+}
+
+export function resolvePendingCompletionCandidates(
+  pendingCandidates: Map<string, PendingCompletionCandidate>,
+  currentItems: SessionNotificationItem[],
+  activeId: string | null,
+  now: number,
+  timeoutMs = COMPLETION_PERSISTENCE_TIMEOUT_MS,
+): {
+  completedIds: string[];
+  nextPendingCandidates: Map<string, PendingCompletionCandidate>;
+} {
+  const currentById = new Map(currentItems.map((item) => [item.id, item]));
+  const completedIds: string[] = [];
+  const nextPendingCandidates = new Map<string, PendingCompletionCandidate>();
+
+  for (const [sessionId, candidate] of pendingCandidates) {
+    const current = currentById.get(sessionId);
+    if (!current || sessionId === activeId) {
+      continue;
+    }
+
+    if (
+      hasPersistedAssistantAdvanced(
+        candidate.baselineAssistantMessageAt,
+        current.latestAssistantMessageAt,
+      )
+    ) {
+      completedIds.push(sessionId);
+      continue;
+    }
+
+    if (now - candidate.waitingSinceMs >= timeoutMs) {
+      continue;
+    }
+
+    nextPendingCandidates.set(sessionId, candidate);
+  }
+
+  return {
+    completedIds,
+    nextPendingCandidates,
+  };
 }
 
 /**
- * Build the set of currently-streaming IDs from an items list.
- */
-export function getStreamingIds(items: StreamingItem[]): Set<string> {
-  return new Set(items.filter((s) => s.streaming).map((s) => s.id));
-}
-
-/**
- * Watches the sessions list for streaming→complete transitions on non-active
- * sessions and fires a sonner toast so the user knows a background task finished.
+ * Watches the sessions list for background chat completions and only notifies
+ * once the assistant message is durably persisted.
  */
 export function useBackgroundChatNotifications(
   sessions: SessionWithUnread[],
   activeSessionId: string | null,
   onNavigateToSession: (session: SessionWithUnread) => void,
+  refreshSessions: () => Promise<unknown>,
 ) {
-  // Track which session IDs were streaming on the previous render.
-  const prevStreamingRef = useRef<Set<string>>(new Set());
-  // Skip the very first render so we don't toast for sessions that were
-  // already done before the component mounted.
+  const previousItemsRef = useRef<SessionNotificationItem[]>([]);
+  const pendingCandidatesRef = useRef<Map<string, PendingCompletionCandidate>>(
+    new Map(),
+  );
   const hasMountedRef = useRef(false);
-  // Keep a stable ref to the navigation callback so the effect closure
-  // doesn't re-run when the callback identity changes.
   const navigateRef = useRef(onNavigateToSession);
+  const refreshSessionsRef = useRef(refreshSessions);
+  const [pendingCount, setPendingCount] = useState(0);
+
   navigateRef.current = onNavigateToSession;
+  refreshSessionsRef.current = refreshSessions;
 
   useEffect(() => {
-    const items = sessions.map((s) => ({
-      id: s.id,
-      streaming: s.hasStreaming,
-    }));
+    const items = toNotificationItems(sessions);
 
     if (hasMountedRef.current) {
-      const completedIds = detectCompletedSessions(
-        prevStreamingRef.current,
+      const now = Date.now();
+      const { completedIds: immediateCompletedIds, awaitingPersistence } =
+        detectStoppedSessionsAwaitingPersistence(
+          previousItemsRef.current,
+          items,
+          activeSessionId,
+        );
+
+      const nextPendingCandidates = new Map(pendingCandidatesRef.current);
+      for (const candidate of awaitingPersistence) {
+        if (!nextPendingCandidates.has(candidate.id)) {
+          nextPendingCandidates.set(candidate.id, {
+            baselineAssistantMessageAt: candidate.baselineAssistantMessageAt,
+            waitingSinceMs: now,
+          });
+        }
+      }
+
+      const {
+        completedIds: persistedCompletedIds,
+        nextPendingCandidates: reconciledPendingCandidates,
+      } = resolvePendingCompletionCandidates(
+        nextPendingCandidates,
         items,
         activeSessionId,
+        now,
       );
 
-      let hasCompleted = false;
+      pendingCandidatesRef.current = reconciledPendingCandidates;
+      setPendingCount(reconciledPendingCandidates.size);
 
-      for (const sessionId of completedIds) {
-        const session = sessions.find((s) => s.id === sessionId);
-        if (!session) continue;
+      const completedSessionIds = new Set([
+        ...immediateCompletedIds,
+        ...persistedCompletedIds,
+      ]);
+
+      let hasCompleted = false;
+      for (const sessionId of completedSessionIds) {
+        const session = sessions.find(
+          (candidate) => candidate.id === sessionId,
+        );
+        if (!session) {
+          continue;
+        }
 
         hasCompleted = true;
         const title = session.title || "A session";
@@ -105,6 +256,24 @@ export function useBackgroundChatNotifications(
     }
 
     hasMountedRef.current = true;
-    prevStreamingRef.current = getStreamingIds(items);
+    previousItemsRef.current = items;
   }, [sessions, activeSessionId]);
+
+  useEffect(() => {
+    if (pendingCount === 0) {
+      return;
+    }
+
+    void refreshSessionsRef.current().catch(() => undefined);
+
+    const interval = setInterval(() => {
+      if (pendingCandidatesRef.current.size === 0) {
+        return;
+      }
+
+      void refreshSessionsRef.current().catch(() => undefined);
+    }, COMPLETION_PERSISTENCE_POLL_MS);
+
+    return () => clearInterval(interval);
+  }, [pendingCount]);
 }

@@ -120,6 +120,7 @@ import {
   useSessionChatRuntimeContext,
   useSessionChatWorkspaceContext,
 } from "./session-chat-context";
+import { usePersistedResponseRecovery } from "./hooks/use-persisted-response-recovery";
 import { useStreamRecovery } from "./hooks/use-stream-recovery";
 import { useAutoCommitStatus } from "./hooks/use-auto-commit-status";
 import {
@@ -833,11 +834,13 @@ function ChatSwitcherPanel({
 
 export function SessionChatContent({
   initialIsOnlyChatInSession,
+  initialAwaitingPersistedAssistant,
   messageDurationMap,
   messageStartedAtMap,
   lastUserMessageSentAt,
 }: {
   initialIsOnlyChatInSession: boolean;
+  initialAwaitingPersistedAssistant: boolean;
   /** Pre-computed generation duration (ms) per assistant message ID */
   messageDurationMap: Record<string, number>;
   /** ISO timestamp of the preceding user message's createdAt, for live timers */
@@ -1361,6 +1364,35 @@ export function SessionChatContent({
       window.removeEventListener("focus", handleWindowFocus);
     };
   }, [requestMarkChatRead]);
+
+  const shouldRecoverPersistedResponse =
+    initialAwaitingPersistedAssistant &&
+    messages.length === initialMessages.length;
+  const persistedResponseRecoveryState = usePersistedResponseRecovery({
+    sessionId: session.id,
+    chatId: chatInfo.id,
+    status,
+    enabled: shouldRecoverPersistedResponse,
+    messages,
+    setMessages,
+    onRecovered: () => {
+      void requestMarkChatRead("force");
+      void refreshChats();
+    },
+  });
+  const isRecoveringPersistedResponse =
+    persistedResponseRecoveryState === "recovering";
+  const didPersistedResponseRecoveryTimeout =
+    persistedResponseRecoveryState === "timed_out";
+  const shouldShowPendingStatusIndicator =
+    showThinkingIndicator ||
+    isRecoveringPersistedResponse ||
+    didPersistedResponseRecoveryTimeout;
+  const pendingStatusText = didPersistedResponseRecoveryTimeout
+    ? "Still saving the response… Refresh in a few seconds."
+    : isRecoveringPersistedResponse
+      ? "Finalizing response…"
+      : "Thinking…";
 
   useStreamRecovery({
     sessionId: session.id,
@@ -3071,13 +3103,20 @@ export function SessionChatContent({
                   return renderGroups(true);
                 },
               )}
-              {showThinkingIndicator && (
+              {shouldShowPendingStatusIndicator && (
                 <div className="my-1.5 border border-transparent py-0.5">
                   <div className="inline-flex items-center gap-2 rounded-md py-px text-sm text-muted-foreground">
                     <span className="flex size-3.5 shrink-0 items-center justify-center">
-                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-muted-foreground" />
+                      <span
+                        className={cn(
+                          "inline-block h-2 w-2 rounded-full bg-muted-foreground",
+                          didPersistedResponseRecoveryTimeout
+                            ? "opacity-70"
+                            : "animate-pulse",
+                        )}
+                      />
                     </span>
-                    <span className="leading-none">Thinking…</span>
+                    <span className="leading-none">{pendingStatusText}</span>
                   </div>
                 </div>
               )}
