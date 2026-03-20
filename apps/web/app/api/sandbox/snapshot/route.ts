@@ -182,9 +182,8 @@ export async function PUT(req: Request) {
     );
   }
   const sandboxType = sessionRecord.sandboxState.type;
-  // Warn if sandbox appears to still be running (has sandboxId)
-  // This shouldn't happen in normal flow since snapshot stops the sandbox
-  if (canOperateOnSandbox(sessionRecord.sandboxState)) {
+  // If an active runtime session still exists, there is nothing to restore yet.
+  if (hasRuntimeSandboxState(sessionRecord.sandboxState)) {
     console.log(
       `[Snapshot Restore] session=${sessionId} already_running=true sandboxType=${sandboxType}`,
     );

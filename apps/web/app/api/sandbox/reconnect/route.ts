@@ -6,11 +6,14 @@ import {
 } from "@/app/api/sessions/_lib/session-context";
 import { updateSession } from "@/lib/db/sessions";
 import {
+  buildActiveLifecycleUpdate,
   buildHibernatedLifecycleUpdate,
   getSandboxExpiresAtDate,
 } from "@/lib/sandbox/lifecycle";
 import {
+  clearSandboxIdentity,
   clearSandboxState,
+  hasPersistentSandboxState,
   hasRuntimeSandboxState,
   isSandboxUnavailableError,
 } from "@/lib/sandbox/utils";
@@ -76,10 +79,10 @@ export async function GET(req: Request): Promise<Response> {
 
   const { sessionRecord } = sessionContext;
 
-  // No runtime sandbox state in DB
-  if (!hasRuntimeSandboxState(sessionRecord.sandboxState)) {
+  // No persistent sandbox state in DB.
+  if (!hasPersistentSandboxState(sessionRecord.sandboxState)) {
     console.log(
-      `[Reconnect] session=${sessionId} status=no_sandbox hasSnapshot=${!!sessionRecord.snapshotUrl} runtimeState=false`,
+      `[Reconnect] session=${sessionId} status=no_sandbox hasSnapshot=${!!sessionRecord.snapshotUrl} persistentSandbox=false`,
     );
     return Response.json({
       status: "no_sandbox",
@@ -91,7 +94,7 @@ export async function GET(req: Request): Promise<Response> {
   const state = sessionRecord.sandboxState;
   if (!state) {
     console.log(
-      `[Reconnect] session=${sessionId} status=no_sandbox hasSnapshot=${!!sessionRecord.snapshotUrl} runtimeState=false`,
+      `[Reconnect] session=${sessionId} status=no_sandbox hasSnapshot=${!!sessionRecord.snapshotUrl} persistentSandbox=false`,
     );
     return Response.json({
       status: "no_sandbox",
@@ -100,7 +103,7 @@ export async function GET(req: Request): Promise<Response> {
     } satisfies ReconnectResponse);
   }
 
-  // Connect and probe the persisted runtime sandbox state.
+  // Connect to the persistent sandbox, resuming it when necessary.
   try {
     const sandbox = await connectSandbox(state as SandboxState);
     const probe = await sandbox.exec("pwd", sandbox.workingDirectory, 15_000);
@@ -121,20 +124,25 @@ export async function GET(req: Request): Promise<Response> {
         ...state,
         ...(sandbox.expiresAt ? { expiresAt: sandbox.expiresAt } : {}),
       } as SandboxState);
-    // Only sync sandbox state/expiry and recover stale failed lifecycle state
-    // without resetting lastActivityAt/hibernateAfter, otherwise every reconnect
-    // probe (including page entry) defeats the inactivity timer.
+
+    const resumedFromPaused =
+      !hasRuntimeSandboxState(state) || sessionRecord.lifecycleState === "hibernated";
     const shouldRecoverFailedLifecycle =
       sessionRecord.lifecycleState === "failed";
+
     const updatedSession = await updateSession(sessionId, {
       sandboxState: refreshedState,
-      sandboxExpiresAt: getSandboxExpiresAtDate(refreshedState),
-      ...(shouldRecoverFailedLifecycle
-        ? {
-            lifecycleState: "active",
-            lifecycleError: null,
-          }
-        : {}),
+      ...(resumedFromPaused
+        ? buildActiveLifecycleUpdate(refreshedState)
+        : {
+            sandboxExpiresAt: getSandboxExpiresAtDate(refreshedState),
+            ...(shouldRecoverFailedLifecycle
+              ? {
+                  lifecycleState: "active",
+                  lifecycleError: null,
+                }
+              : {}),
+          }),
     });
 
     console.log(
@@ -150,7 +158,7 @@ export async function GET(req: Request): Promise<Response> {
     const message = error instanceof Error ? error.message : String(error);
     if (!isSandboxUnavailableError(message)) {
       console.warn(
-        `[Reconnect] session=${sessionId} transient reconnect error, preserving runtime state: ${message}`,
+        `[Reconnect] session=${sessionId} transient reconnect error, preserving sandbox state: ${message}`,
       );
       // Only forward expiresAt if it's still in the future; stale values
       // cause the client to compute a zero/negative timeout and flip to expired.
@@ -167,9 +175,9 @@ export async function GET(req: Request): Promise<Response> {
       } satisfies ReconnectResponse);
     }
 
-    // Sandbox no longer exists (expired or stopped)
+    // Sandbox artifact no longer exists.
     await updateSession(sessionId, {
-      sandboxState: clearSandboxState(sessionRecord.sandboxState),
+      sandboxState: clearSandboxIdentity(sessionRecord.sandboxState),
       ...buildHibernatedLifecycleUpdate(),
     });
     console.error(
@@ -180,7 +188,7 @@ export async function GET(req: Request): Promise<Response> {
       hasSnapshot: !!sessionRecord.snapshotUrl,
       lifecycle: {
         serverTime: Date.now(),
-        state: "hibernated",
+        state: sessionRecord.snapshotUrl ? "hibernated" : null,
         lastActivityAt: null,
         hibernateAfter: null,
         sandboxExpiresAt: null,

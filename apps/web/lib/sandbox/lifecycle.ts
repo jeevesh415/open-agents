@@ -1,16 +1,12 @@
 import "server-only";
 
-import {
-  connectSandbox,
-  type SandboxState,
-  type SnapshotResult,
-} from "@open-harness/sandbox";
+import { connectSandbox, type SandboxState } from "@open-harness/sandbox";
 import { getSessionById, updateSession } from "@/lib/db/sessions";
 import {
   SANDBOX_EXPIRES_BUFFER_MS,
   SANDBOX_INACTIVITY_TIMEOUT_MS,
 } from "./config";
-import { canOperateOnSandbox, clearSandboxState } from "./utils";
+import { clearSandboxState, hasRuntimeSandboxState } from "./utils";
 
 export type SandboxLifecycleState =
   | "provisioning"
@@ -39,36 +35,6 @@ interface LifecycleTimingSource {
   lastActivityAt: Date | null;
   sandboxExpiresAt: Date | null;
   updatedAt: Date;
-}
-
-function extractSnapshotConflictDetails(error: unknown): string {
-  const parts: string[] = [];
-
-  if (error instanceof Error) {
-    parts.push(error.message);
-  }
-  if (typeof error === "string") {
-    parts.push(error);
-  }
-  if (error && typeof error === "object") {
-    const withText = error as { text?: unknown; json?: unknown };
-    if (typeof withText.text === "string") {
-      parts.push(withText.text);
-    }
-    if (withText.json !== undefined) {
-      parts.push(JSON.stringify(withText.json));
-    }
-  }
-
-  return parts.join(" ");
-}
-
-function isSnapshotAlreadyInProgressError(error: unknown): boolean {
-  const details = extractSnapshotConflictDetails(error).toLowerCase();
-  return (
-    details.includes("sandbox_snapshotting") ||
-    details.includes("creating a snapshot and will be stopped shortly")
-  );
 }
 
 type LifecycleUpdate = Parameters<typeof updateSession>[1];
@@ -209,7 +175,7 @@ export async function evaluateSandboxLifecycle(
   }
 
   const sandboxState = session.sandboxState;
-  if (!canOperateOnSandbox(sandboxState)) {
+  if (!sandboxState || !hasRuntimeSandboxState(sandboxState)) {
     return { action: "skipped", reason: "sandbox-not-operable" };
   }
   if (sandboxState.type !== "vercel") {
@@ -235,56 +201,14 @@ export async function evaluateSandboxLifecycle(
     });
 
     const sandbox = await connectSandbox(sandboxState);
-    if (!sandbox.snapshot) {
-      await updateSession(sessionId, {
-        ...buildActiveLifecycleUpdate(sandboxState),
-      });
-      return { action: "skipped", reason: "snapshot-not-supported" };
-    }
-
-    let snapshot: SnapshotResult;
-    try {
-      snapshot = await sandbox.snapshot();
-    } catch (snapshotError) {
-      if (isSnapshotAlreadyInProgressError(snapshotError)) {
-        const refreshedSession = await getSessionById(sessionId);
-        if (
-          refreshedSession?.sandboxState &&
-          canOperateOnSandbox(refreshedSession.sandboxState)
-        ) {
-          // Keep the lifecycle due immediately eligible for re-check; if a
-          // snapshot is already in progress we should not refresh
-          // lastActivityAt/hibernateAfter and accidentally extend "active" UI.
-          await updateSession(sessionId, {
-            lifecycleState: "active",
-            lifecycleError: null,
-            sandboxExpiresAt: getSandboxExpiresAtDate(
-              refreshedSession.sandboxState,
-            ),
-          });
-        } else {
-          await updateSession(sessionId, {
-            ...buildHibernatedLifecycleUpdate(),
-          });
-        }
-        console.log(
-          `[Lifecycle] Snapshot already in progress for session ${sessionId}; treating as idempotent.`,
-        );
-        return { action: "skipped", reason: "snapshot-already-in-progress" };
-      }
-      throw snapshotError;
-    }
-
-    const snapshotCreatedAt = new Date();
+    await sandbox.stop();
 
     await updateSession(sessionId, {
-      snapshotUrl: snapshot.snapshotId,
-      snapshotCreatedAt,
       sandboxState: clearSandboxState(sandboxState),
       ...buildHibernatedLifecycleUpdate(),
     });
     console.log(
-      `[Lifecycle] Hibernated sandbox for session ${sessionId} (reason=${reason}, snapshotId=${snapshot.snapshotId}).`,
+      `[Lifecycle] Hibernated persistent sandbox for session ${sessionId} (reason=${reason}).`,
     );
     return { action: "hibernated" };
   } catch (error) {

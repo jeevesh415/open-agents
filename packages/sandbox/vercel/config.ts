@@ -64,8 +64,7 @@ export interface VercelSandboxConfig {
   baseSnapshotId?: string;
   /**
    * Whether the sandbox should persist filesystem state between sessions.
-   * Defaults to false in this wrapper because Open Harness manages snapshots
-   * explicitly and still relies on v1-style stop/hibernate semantics.
+   * Defaults to true to align with the v2 persistent sandbox model.
    */
   persistent?: boolean;
   /**

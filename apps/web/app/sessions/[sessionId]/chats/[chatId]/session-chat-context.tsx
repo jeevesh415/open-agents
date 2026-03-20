@@ -29,7 +29,12 @@ import {
 import { useSessionSkills } from "@/hooks/use-session-skills";
 import type { Chat, Session } from "@/lib/db/schema";
 import { type ModelOption, withMissingModelOption } from "@/lib/model-options";
-import { hasRuntimeSandboxState as hasRuntimeSandboxStateValue } from "@/lib/sandbox/utils";
+import {
+  clearSandboxIdentity,
+  clearSandboxState,
+  hasPersistentSandboxState as hasPersistentSandboxStateValue,
+  hasRuntimeSandboxState as hasRuntimeSandboxStateValue,
+} from "@/lib/sandbox/utils";
 import {
   type RetryChatStreamOptions,
   useSessionChatRuntime,
@@ -159,6 +164,8 @@ type SessionChatContextValue = {
   supportsRepoCreation: boolean;
   /** Whether session state currently has runtime sandbox data */
   hasRuntimeSandboxState: boolean;
+  /** Whether session state still has a persistent sandbox identity to resume */
+  hasPersistentSandboxState: boolean;
   /** Whether the session currently has a saved snapshot available */
   hasSnapshot: boolean;
   /** Update sandbox type in session state if valid */
@@ -242,6 +249,7 @@ type SessionChatMetadataContextValue = Pick<
   | "supportsDiff"
   | "supportsRepoCreation"
   | "hasRuntimeSandboxState"
+  | "hasPersistentSandboxState"
   | "hasSnapshot"
   | "setSandboxTypeFromUnknown"
   | "reconnectionStatus"
@@ -337,12 +345,9 @@ export function SessionChatProvider({
   const clearSandboxInfo = useCallback(() => {
     setSandboxInfoState(null);
     sandboxInfoCache.delete(sessionId);
-    // Preserve the sandbox type for restoration, but clear other state
     setSessionRecord((prev) => ({
       ...prev,
-      sandboxState: prev.sandboxState
-        ? ({ type: prev.sandboxState.type } as SandboxState)
-        : null,
+      sandboxState: clearSandboxState(prev.sandboxState),
     }));
   }, [sessionId]);
 
@@ -460,15 +465,23 @@ export function SessionChatProvider({
           return "connected";
         }
 
-        if (data.status === "no_sandbox" || data.status === "expired") {
+        if (data.status === "no_sandbox") {
           setSandboxInfoState(null);
           sandboxInfoCache.delete(sessionId);
-          // Preserve the sandbox type for restoration, but clear other state
           setSessionRecord((prev) => ({
             ...prev,
-            sandboxState: prev.sandboxState
-              ? ({ type: prev.sandboxState.type } as SandboxState)
-              : null,
+            sandboxState: clearSandboxState(prev.sandboxState),
+          }));
+          setReconnectionStatus("no_sandbox");
+          return "no_sandbox";
+        }
+
+        if (data.status === "expired") {
+          setSandboxInfoState(null);
+          sandboxInfoCache.delete(sessionId);
+          setSessionRecord((prev) => ({
+            ...prev,
+            sandboxState: clearSandboxIdentity(prev.sandboxState),
           }));
           setReconnectionStatus("no_sandbox");
           return "no_sandbox";
@@ -476,12 +489,9 @@ export function SessionChatProvider({
 
         setSandboxInfoState(null);
         sandboxInfoCache.delete(sessionId);
-        // Preserve the sandbox type for restoration, but clear other state
         setSessionRecord((prev) => ({
           ...prev,
-          sandboxState: prev.sandboxState
-            ? ({ type: prev.sandboxState.type } as SandboxState)
-            : null,
+          sandboxState: clearSandboxState(prev.sandboxState),
         }));
         setReconnectionStatus("failed");
         return "failed";
@@ -531,9 +541,7 @@ export function SessionChatProvider({
             sandboxInfoCache.delete(sessionId);
             setSessionRecord((prev) => ({
               ...prev,
-              sandboxState: prev.sandboxState
-                ? ({ type: prev.sandboxState.type } as SandboxState)
-                : null,
+              sandboxState: clearSandboxState(prev.sandboxState),
             }));
             setReconnectionStatus((prev) =>
               prev === "checking" ? prev : "no_sandbox",
@@ -762,6 +770,9 @@ export function SessionChatProvider({
     sessionRecord.sandboxState?.type === undefined ||
     sessionRecord.sandboxState.type === "vercel";
   const hasRuntimeSandboxState = hasRuntimeSandboxStateValue(
+    sessionRecord.sandboxState,
+  );
+  const hasPersistentSandboxState = hasPersistentSandboxStateValue(
     sessionRecord.sandboxState,
   );
   const hasSnapshot = hasSnapshotState || !!sessionRecord.snapshotUrl;
@@ -1078,6 +1089,7 @@ export function SessionChatProvider({
       supportsDiff,
       supportsRepoCreation,
       hasRuntimeSandboxState,
+      hasPersistentSandboxState,
       hasSnapshot,
       setSandboxTypeFromUnknown,
       reconnectionStatus,
@@ -1104,6 +1116,7 @@ export function SessionChatProvider({
       supportsDiff,
       supportsRepoCreation,
       hasRuntimeSandboxState,
+      hasPersistentSandboxState,
       hasSnapshot,
       setSandboxTypeFromUnknown,
       reconnectionStatus,

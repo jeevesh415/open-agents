@@ -7,7 +7,10 @@ import {
   getPullRequestStatus,
 } from "@/lib/github/client";
 import { getRepoToken } from "@/lib/github/get-repo-token";
-import { canOperateOnSandbox, clearSandboxState } from "./utils";
+import {
+  clearSandboxState,
+  hasRuntimeSandboxState,
+} from "./utils";
 
 type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
 type SessionUpdateInput = Parameters<typeof updateSession>[1];
@@ -41,7 +44,7 @@ async function refreshArchiveGitState(
   currentSession: SessionRecord,
   logPrefix: string,
 ): Promise<SessionUpdateInput> {
-  if (!canOperateOnSandbox(currentSession.sandboxState)) {
+  if (!hasRuntimeSandboxState(currentSession.sandboxState)) {
     return {};
   }
 
@@ -156,39 +159,14 @@ async function finalizeArchivedSessionSandbox(
     if (!archivedSession || archivedSession.status !== "archived") {
       return;
     }
-    if (!canOperateOnSandbox(archivedSession.sandboxState)) {
+    if (!hasRuntimeSandboxState(archivedSession.sandboxState)) {
       return;
     }
 
     const sandbox = await connectSandbox(archivedSession.sandboxState);
-
-    // Snapshot before stopping so the sandbox can be restored on unarchive.
-    // snapshot() automatically stops the sandbox, so no separate stop() needed.
-    let snapshotFields: {
-      snapshotUrl?: string;
-      snapshotCreatedAt?: Date;
-    } = {};
-
-    if (sandbox.snapshot) {
-      try {
-        const result = await sandbox.snapshot();
-        snapshotFields = {
-          snapshotUrl: result.snapshotId,
-          snapshotCreatedAt: new Date(),
-        };
-      } catch (snapshotError) {
-        console.error(
-          `${logPrefix} Snapshot failed for session ${sessionId}, falling back to stop:`,
-          snapshotError,
-        );
-        await sandbox.stop();
-      }
-    } else {
-      await sandbox.stop();
-    }
+    await sandbox.stop();
 
     await updateSession(sessionId, {
-      ...snapshotFields,
       sandboxState: clearSandboxState(archivedSession.sandboxState),
       lifecycleState: "archived",
       sandboxExpiresAt: null,
@@ -216,10 +194,7 @@ async function finalizeArchivedSessionSandbox(
         lifecycleError: `Archive finalization failed: ${errorMessage}`,
       };
 
-      if (
-        !sessionAfterFailure.snapshotUrl &&
-        canOperateOnSandbox(sessionAfterFailure.sandboxState)
-      ) {
+      if (sessionAfterFailure.sandboxState) {
         failurePatch.sandboxState = clearSandboxState(
           sessionAfterFailure.sandboxState,
         );

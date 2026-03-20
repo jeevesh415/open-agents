@@ -19,7 +19,11 @@ import {
   getNextLifecycleVersion,
 } from "@/lib/sandbox/lifecycle";
 import { kickSandboxLifecycleWorkflow } from "@/lib/sandbox/lifecycle-kick";
-import { canOperateOnSandbox, clearSandboxState } from "@/lib/sandbox/utils";
+import {
+  canOperateOnSandbox,
+  clearSandboxState,
+  hasRuntimeSandboxState,
+} from "@/lib/sandbox/utils";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { buildDevelopmentDotenvFromVercelProject } from "@/lib/vercel/projects";
 import { getUserVercelToken } from "@/lib/vercel/token";
@@ -283,8 +287,13 @@ export async function DELETE(req: Request) {
 
   const { sessionRecord } = sessionContext;
 
-  // If there's no sandbox to stop, return success (idempotent)
+  // If there's no persistent sandbox to stop, return success (idempotent)
   if (!canOperateOnSandbox(sessionRecord.sandboxState)) {
+    return Response.json({ success: true, alreadyStopped: true });
+  }
+
+  // If the sandbox is already stopped, preserve the persistent sandbox identity.
+  if (!hasRuntimeSandboxState(sessionRecord.sandboxState)) {
     return Response.json({ success: true, alreadyStopped: true });
   }
 
@@ -294,7 +303,7 @@ export async function DELETE(req: Request) {
 
   await updateSession(sessionId, {
     sandboxState: clearSandboxState(sessionRecord.sandboxState),
-    lifecycleState: sessionRecord.snapshotUrl ? "hibernated" : "provisioning",
+    lifecycleState: "hibernated",
     sandboxExpiresAt: null,
     hibernateAfter: null,
     lifecycleRunId: null,

@@ -9,7 +9,10 @@ import {
   getSandboxExpiresAtDate,
 } from "@/lib/sandbox/lifecycle";
 import { kickSandboxLifecycleWorkflow } from "@/lib/sandbox/lifecycle-kick";
-import { hasRuntimeSandboxState } from "@/lib/sandbox/utils";
+import {
+  hasPersistentSandboxState,
+  hasRuntimeSandboxState,
+} from "@/lib/sandbox/utils";
 
 export type SandboxStatusResponse = {
   status: "active" | "no_sandbox";
@@ -47,9 +50,10 @@ export async function GET(req: Request): Promise<Response> {
 
   const { sessionRecord } = sessionContext;
   let effectiveSessionRecord = sessionRecord;
+  const hasPersistentState = hasPersistentSandboxState(sessionRecord.sandboxState);
   const hasRuntimeState = hasRuntimeSandboxState(sessionRecord.sandboxState);
 
-  // Check expiry: the DB may still have sandboxId/files but the VM has expired.
+  // Check expiry: the DB may still have runtime state after the session has expired.
   // Use the same 10s buffer as the chat route's isSandboxActive() so they agree.
   let isExpired = false;
   if (hasRuntimeState && sessionRecord.sandboxExpiresAt) {
@@ -87,7 +91,7 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   return Response.json({
-    status: isActive ? "active" : "no_sandbox",
+    status: hasPersistentState && isActive ? "active" : "no_sandbox",
     hasSnapshot: !!effectiveSessionRecord.snapshotUrl,
     lifecycleVersion: effectiveSessionRecord.lifecycleVersion,
     lifecycle: {

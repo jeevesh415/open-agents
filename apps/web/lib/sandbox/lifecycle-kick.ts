@@ -9,7 +9,7 @@ import {
   getLifecycleDueAtMs,
   type SandboxLifecycleReason,
 } from "./lifecycle";
-import { canOperateOnSandbox } from "./utils";
+import { hasRuntimeSandboxState } from "./utils";
 
 interface KickSandboxLifecycleInput {
   sessionId: string;
@@ -63,7 +63,7 @@ function shouldStartLifecycle(
   if (!session.sandboxState) {
     return false;
   }
-  if (!canOperateOnSandbox(session.sandboxState)) {
+  if (!hasRuntimeSandboxState(session.sandboxState)) {
     return false;
   }
   if (session.sandboxState.type !== "vercel") {

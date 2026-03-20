@@ -43,7 +43,7 @@ export async function connectVercel(
   state: VercelState,
   options?: ConnectOptions,
 ): Promise<Sandbox> {
-  // Reconnect to existing VM
+  // Reconnect to an existing sandbox (resuming it if currently stopped)
   if (state.sandboxId) {
     const remainingTimeout = getRemainingTimeout(state.expiresAt);
 
@@ -76,7 +76,6 @@ export async function connectVercel(
   if (state.snapshotId) {
     const sdk = await VercelSandboxSDK.create({
       source: { type: "snapshot", snapshotId: state.snapshotId },
-      persistent: false,
       ...(options?.timeout !== undefined && { timeout: options.timeout }),
       ...(options?.ports && { ports: options.ports }),
     });

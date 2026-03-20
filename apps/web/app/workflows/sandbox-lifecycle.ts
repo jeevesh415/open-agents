@@ -7,7 +7,7 @@ import {
   type SandboxLifecycleEvaluationResult,
   type SandboxLifecycleReason,
 } from "@/lib/sandbox/lifecycle";
-import { canOperateOnSandbox } from "@/lib/sandbox/utils";
+import { hasRuntimeSandboxState } from "@/lib/sandbox/utils";
 
 interface LifecycleWakeDecision {
   shouldContinue: boolean;
@@ -51,7 +51,7 @@ async function computeLifecycleWakeDecision(
   }
 
   const state = session.sandboxState;
-  if (!canOperateOnSandbox(state) || state.type !== "vercel") {
+  if (!state || !hasRuntimeSandboxState(state) || state.type !== "vercel") {
     return { shouldContinue: false, reason: "sandbox-not-operable" };
   }
   if (!(await claimLifecycleLease(sessionId, runId))) {

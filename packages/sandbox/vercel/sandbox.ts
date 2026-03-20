@@ -349,7 +349,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       runtime = "node22",
       ports,
       baseSnapshotId,
-      persistent = false,
+      persistent = true,
       hooks,
     } = config;
 
@@ -546,16 +546,19 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       ports?: number[];
       /** Reuse an already-created SDK sandbox instance when available. */
       sdk?: VercelSandboxSDK;
+      /** Whether stopped sandboxes should be resumed automatically. */
+      resume?: boolean;
     } = {},
   ): Promise<VercelSandbox> {
+    const resume = options.resume ?? true;
     const sdk =
       options.sdk ??
       (await VercelSandboxSDK.get({
         name: sandboxId,
-        resume: false,
+        resume,
       }));
 
-    if (sdk.status !== "running" && sdk.status !== "pending") {
+    if (!resume && sdk.status !== "running" && sdk.status !== "pending") {
       throw new Error(`Sandbox is stopped (status: ${sdk.status})`);
     }
 

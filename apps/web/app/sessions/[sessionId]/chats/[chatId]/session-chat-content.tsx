@@ -990,6 +990,7 @@ export function SessionChatContent({
     supportsDiff,
     supportsRepoCreation,
     hasRuntimeSandboxState,
+    hasPersistentSandboxState,
     hasSnapshot,
     setSandboxTypeFromUnknown,
     reconnectionStatus,
@@ -1658,6 +1659,41 @@ export function SessionChatContent({
     },
     [attemptReconnection, syncSandboxStatus],
   );
+
+  const handleResumeSandbox = useCallback(async () => {
+    if (hasPersistentSandboxState) {
+      setIsRestoringSnapshot(true);
+      setRestoreError(null);
+
+      try {
+        const reconnected = await waitForSandboxReady();
+        if (!reconnected) {
+          setRestoreError(
+            hasSnapshot
+              ? "Persistent sandbox resume did not complete. Try Resume sandbox again or restore the saved snapshot."
+              : "Persistent sandbox resume did not complete yet. Try again in a few seconds.",
+          );
+          return;
+        }
+
+        void requestStatusSync("force");
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        setRestoreError(`Failed to resume sandbox: ${errorMsg}`);
+      } finally {
+        setIsRestoringSnapshot(false);
+      }
+      return;
+    }
+
+    await handleRestoreSnapshot();
+  }, [
+    hasPersistentSandboxState,
+    hasSnapshot,
+    requestStatusSync,
+    waitForSandboxReady,
+    handleRestoreSnapshot,
+  ]);
 
   const handleRestoreSnapshot = useCallback(async () => {
     setIsRestoringSnapshot(true);
