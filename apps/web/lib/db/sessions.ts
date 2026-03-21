@@ -148,6 +148,7 @@ type SessionSidebarFields = Pick<
 export type SessionWithUnread = SessionSidebarFields & {
   hasUnread: boolean;
   hasStreaming: boolean;
+  needsResponse: boolean;
   latestChatId: string | null;
   lastActivityAt: Date;
 };
@@ -200,6 +201,14 @@ export async function getSessionsWithUnreadByUserId(
         END
       ), false)`,
       hasStreaming: sql<boolean>`COALESCE(BOOL_OR(${chats.activeStreamId} IS NOT NULL), false)`,
+      needsResponse: sql<boolean>`COALESCE(BOOL_OR(
+        CASE
+          WHEN ${chats.lastAssistantMessageAt} IS NULL THEN false
+          WHEN ${chats.lastUserMessageAt} IS NULL THEN true
+          WHEN ${chats.lastAssistantMessageAt} > ${chats.lastUserMessageAt} THEN true
+          ELSE false
+        END
+      ), false)`,
       latestChatId: sql<string | null>`(
         ARRAY_AGG(${chats.id} ORDER BY ${chats.updatedAt} DESC, ${chats.createdAt} DESC)
         FILTER (WHERE ${chats.id} IS NOT NULL)
@@ -336,6 +345,7 @@ export async function getChatSummariesBySessionId(
       modelId: chats.modelId,
       activeStreamId: chats.activeStreamId,
       lastAssistantMessageAt: chats.lastAssistantMessageAt,
+      lastUserMessageAt: chats.lastUserMessageAt,
       createdAt: chats.createdAt,
       updatedAt: chats.updatedAt,
       hasUnread: sql<boolean>`
@@ -388,6 +398,18 @@ export async function updateChatAssistantActivity(
     .update(chats)
     .set({
       lastAssistantMessageAt: activityAt,
+      updatedAt: activityAt,
+    })
+    .where(eq(chats.id, chatId))
+    .returning();
+  return chat;
+}
+
+export async function updateChatUserActivity(chatId: string, activityAt: Date) {
+  const [chat] = await db
+    .update(chats)
+    .set({
+      lastUserMessageAt: activityAt,
       updatedAt: activityAt,
     })
     .where(eq(chats.id, chatId))

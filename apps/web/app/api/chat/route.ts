@@ -7,6 +7,7 @@ import {
   isFirstChatMessage,
   touchChat,
   updateChat,
+  updateChatUserActivity,
   updateSession,
 } from "@/lib/db/sessions";
 import { getUserPreferences } from "@/lib/db/user-preferences";
@@ -234,6 +235,7 @@ async function persistLatestUserMessage(
     }
 
     await touchChat(chatId);
+    await updateChatUserActivity(chatId, created.createdAt);
 
     const shouldSetTitle = await isFirstChatMessage(chatId, created.id);
     if (!shouldSetTitle) {

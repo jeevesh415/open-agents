@@ -22,6 +22,7 @@ export type SessionWithUnread = Pick<
 > & {
   hasUnread: boolean;
   hasStreaming: boolean;
+  needsResponse: boolean;
   latestChatId: string | null;
   lastActivityAt: Session["createdAt"];
 };
@@ -79,6 +80,7 @@ function mergeSessionWithSummary(
     createdAt: updatedSession.createdAt,
     hasUnread: session.hasUnread,
     hasStreaming: session.hasStreaming,
+    needsResponse: session.needsResponse,
     latestChatId: session.latestChatId,
     lastActivityAt: session.lastActivityAt,
   };
@@ -174,6 +176,7 @@ export function useSessions(options?: {
                 ...createdSession,
                 hasUnread: false,
                 hasStreaming: false,
+                needsResponse: false,
                 latestChatId: createdChat.id,
                 lastActivityAt: createdChat.updatedAt,
               },

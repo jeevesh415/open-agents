@@ -10,6 +10,7 @@ import {
   isFirstChatMessage,
   upsertChatMessageScoped,
   updateChatAssistantActivity,
+  updateChatUserActivity,
 } from "@/lib/db/sessions";
 import { buildActiveLifecycleUpdate } from "@/lib/sandbox/lifecycle";
 import { recordUsage } from "@/lib/db/usage";
@@ -94,6 +95,7 @@ export async function persistUserMessage(
     }
 
     await touchChat(chatId);
+    await updateChatUserActivity(chatId, created.createdAt);
 
     const shouldSetTitle = await isFirstChatMessage(chatId, created.id);
     if (!shouldSetTitle) {

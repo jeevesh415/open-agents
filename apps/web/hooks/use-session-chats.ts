@@ -499,6 +499,7 @@ export function useSessionChats(
       modelId: data?.defaultModelId ?? null,
       activeStreamId: null,
       lastAssistantMessageAt: null,
+      lastUserMessageAt: null,
       createdAt: now,
       updatedAt: now,
     };
