@@ -125,20 +125,49 @@ function sortSessionsForInbox(
 }
 
 /**
- * Compressed context for the right side of the row.
- * Shows the single most useful piece of context — no redundancy.
+ * Second-line metadata: repo · branch · PR status.
+ * Joins only what exists, returns null if empty.
  */
-function getContextLabel(session: SessionWithUnread): string | null {
+function getMetaLine(session: SessionWithUnread): string | null {
+  const parts: string[] = [];
+
+  if (session.repoOwner && session.repoName) {
+    parts.push(`${session.repoOwner}/${session.repoName}`);
+  } else if (session.repoName) {
+    parts.push(session.repoName);
+  }
+
+  if (session.branch) {
+    parts.push(session.branch);
+  }
+
   if (session.prNumber) {
-    const prefix = session.prStatus === "merged" ? "merged" : "PR";
-    return `${prefix} #${session.prNumber}`;
+    const prefix = session.prStatus === "merged" ? "Merged" : "PR";
+    parts.push(`${prefix} #${session.prNumber}`);
   }
 
-  if (session.repoName) {
-    return session.repoName;
-  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
-  return null;
+function DiffStats({
+  added,
+  removed,
+}: {
+  added: number | null;
+  removed: number | null;
+}) {
+  if (added === null && removed === null) return null;
+
+  return (
+    <span className="ml-auto flex shrink-0 items-center gap-0.5 font-mono text-[10px]">
+      {added !== null ? (
+        <span className="text-green-600 dark:text-green-500">+{added}</span>
+      ) : null}
+      {removed !== null ? (
+        <span className="text-red-600 dark:text-red-400">-{removed}</span>
+      ) : null}
+    </span>
+  );
 }
 
 type SessionRowProps = {
@@ -170,12 +199,12 @@ const SessionRow = memo(function SessionRow({
       formatRelativeTime(new Date(session.lastActivityAt ?? session.createdAt)),
     [session.createdAt, session.lastActivityAt],
   );
-  const contextLabel = getContextLabel(session);
+  const meta = getMetaLine(session);
 
   return (
     <div
       className={cn(
-        "group relative flex w-full items-center gap-2.5 border-b border-border/50 px-4 py-2 text-left transition-colors",
+        "group relative border-b border-border/50 transition-colors",
         isActive
           ? "bg-accent/50"
           : isFocused
@@ -186,45 +215,55 @@ const SessionRow = memo(function SessionRow({
       style={sessionRowPerformanceStyle}
       data-session-id={session.id}
     >
-      {/* Status dot */}
-      <div className="flex w-2 shrink-0 items-center justify-center">
-        {isWorking ? (
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-        ) : hasAction ? (
-          <span className="h-1.5 w-1.5 rounded-full bg-foreground" />
-        ) : null}
-      </div>
-
       <button
         type="button"
         onClick={() => onSessionClick(session)}
         onMouseEnter={() => onSessionPrefetch(session)}
         onFocus={() => onSessionPrefetch(session)}
-        className="flex min-w-0 flex-1 items-baseline gap-3 pr-5"
+        className="flex w-full items-start gap-3 px-4 py-2.5 pr-8 text-left"
         tabIndex={-1}
         aria-busy={isPending}
       >
-        <p
-          className={cn(
-            "min-w-0 flex-1 truncate text-[13px] leading-5",
-            isHighlighted
-              ? "font-semibold text-foreground"
-              : "font-normal text-foreground",
-          )}
-        >
-          {session.title}
-        </p>
-        <span className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
-          {contextLabel ? (
-            <span className="max-w-[12rem] truncate font-mono">
-              {contextLabel}
-            </span>
+        {/* Status dot — aligned to first line of text */}
+        <div className="mt-[7px] w-2 shrink-0">
+          {isWorking ? (
+            <span className="block h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+          ) : hasAction ? (
+            <span className="block h-1.5 w-1.5 rounded-full bg-foreground" />
           ) : null}
-          {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-          <span className="w-8 text-right tabular-nums">
-            {lastActivityLabel}
-          </span>
-        </span>
+        </div>
+
+        {/* Two-line content */}
+        <div className="min-w-0 flex-1">
+          {/* Line 1: title + timestamp */}
+          <div className="flex items-baseline gap-2">
+            <p
+              className={cn(
+                "min-w-0 flex-1 truncate text-sm",
+                isHighlighted
+                  ? "font-semibold text-foreground"
+                  : "text-foreground",
+              )}
+            >
+              {session.title}
+            </p>
+            <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+              {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+              <span className="tabular-nums">{lastActivityLabel}</span>
+            </span>
+          </div>
+
+          {/* Line 2: repo · branch · PR + diff stats */}
+          {meta ? (
+            <div className="mt-0.5 flex items-baseline gap-1.5 text-xs text-muted-foreground">
+              <span className="min-w-0 truncate font-mono">{meta}</span>
+              <DiffStats
+                added={session.linesAdded}
+                removed={session.linesRemoved}
+              />
+            </div>
+          ) : null}
+        </div>
       </button>
 
       <DropdownMenu>
@@ -232,7 +271,7 @@ const SessionRow = memo(function SessionRow({
           <button
             type="button"
             onClick={(e) => e.stopPropagation()}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 data-[state=open]:opacity-100"
+            className="absolute right-2 top-2.5 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 data-[state=open]:opacity-100"
             tabIndex={-1}
             aria-label={`Open menu for ${session.title}`}
           >
@@ -703,12 +742,11 @@ export function InboxSidebar({
         aria-label="Sessions"
       >
         {showLoadingSkeleton ? (
-          <div className="space-y-px">
-            {Array.from({ length: 10 }).map((_, index) => (
-              <div key={index} className="flex items-center gap-3 px-4 py-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-muted" />
-                <div className="h-3.5 flex-1 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-16 animate-pulse rounded bg-muted" />
+          <div>
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div key={index} className="space-y-1.5 px-4 py-2.5">
+                <div className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
               </div>
             ))}
           </div>
