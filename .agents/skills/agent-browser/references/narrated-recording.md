@@ -252,17 +252,26 @@ echo "Done: $VIDEO_PATH + $VTT_PATH"
 </video>
 ```
 
-### As input for TTS audio synthesis
+### As a narrated video with audio voiceover
 
-The VTT timestamps can drive a text-to-speech pipeline to produce an actual audio voiceover:
+Use the `narrate-audio.ts` script to synthesize real speech from the VTT cues and mux it into the video as an audio track. This uses the AI SDK with ElevenLabs for text-to-speech and ffmpeg for audio assembly.
 
 ```bash
-# Pseudocode — extract cues and synthesize speech per segment
-parse_vtt demo.vtt | while read start end text; do
-  tts_synthesize "$text" --output "segment_${start}.mp3"
-done
-# Then mux segments into the video at their timestamps
+# Requires: ELEVENLABS_API_KEY env var, ffmpeg-static package
+bun .agents/skills/agent-browser/templates/narrate-audio.ts ./demo.webm
+# Output: demo-narrated.webm (video with voiceover audio track)
 ```
+
+The script:
+1. Parses the VTT file (inferred from video filename: `demo.webm` → `demo.vtt`)
+2. Calls ElevenLabs TTS for each cue via `generateSpeech` from the AI SDK
+3. Assembles an audio track with each speech segment timed to its VTT timestamp
+4. Muxes the audio into the video, producing `demo-narrated.webm`
+
+Dependencies:
+- `ai` and `@ai-sdk/elevenlabs` packages (already in project)
+- `ffmpeg-static` package (`bun add ffmpeg-static`) — or any `ffmpeg` on PATH
+- `ELEVENLABS_API_KEY` environment variable
 
 ### As standalone documentation
 

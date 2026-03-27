@@ -375,6 +375,7 @@ Executable workflow scripts for common patterns:
 | [templates/authenticated-session.sh](templates/authenticated-session.sh) | Login once, reuse state |
 | [templates/capture-workflow.sh](templates/capture-workflow.sh) | Content extraction with screenshots |
 | [templates/narrated-screencast.sh](templates/narrated-screencast.sh) | Record a demo with a VTT voiceover script |
+| [templates/narrate-audio.ts](templates/narrate-audio.ts) | Synthesize TTS voiceover and mux into video |
 
 Usage:
 ```bash
@@ -382,6 +383,7 @@ Usage:
 ./templates/authenticated-session.sh https://app.example.com/login
 ./templates/capture-workflow.sh https://example.com ./output
 ./templates/narrated-screencast.sh https://example.com ./recordings
+bun ./templates/narrate-audio.ts ./demo.webm  # adds audio voiceover
 ```
 
 ## HTTPS Certificate Errors
