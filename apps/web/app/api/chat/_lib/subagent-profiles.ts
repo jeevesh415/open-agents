@@ -27,6 +27,7 @@ export function buildRuntimeSubagentProfiles(params: {
     (profile) => ({
       ...profile,
       description: getSubagentProfileDescription({
+        description: profile.description,
         customPrompt: profile.customPrompt,
       }),
       model: resolveChatModelSelection({

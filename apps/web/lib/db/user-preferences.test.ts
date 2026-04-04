@@ -89,6 +89,7 @@ describe("toUserPreferencesData", () => {
         {
           id: "frontend-design",
           name: "Frontend Design",
+          description: "Build polished frontend interfaces.",
           model: "openai/gpt-5",
           customPrompt: "Focus on polished UI work.",
           skills: [{ id: "frontend-design" }],
@@ -116,6 +117,7 @@ describe("toUserPreferencesData", () => {
         {
           id: "frontend-design",
           name: "Frontend Design",
+          description: "Build polished frontend interfaces.",
           model: "openai/gpt-5",
           customPrompt: "Focus on polished UI work.",
           skills: [{ id: "frontend-design" }],

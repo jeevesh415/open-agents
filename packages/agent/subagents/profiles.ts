@@ -59,6 +59,10 @@ export const customSubagentProfileSchema = z.object({
     .min(1, "Profile id is required")
     .regex(SUBAGENT_ID_PATTERN, "Profile id must be lowercase kebab-case"),
   name: z.string().trim().min(1, "Subagent name is required"),
+  description: z
+    .string()
+    .default("")
+    .transform((value) => value.trim()),
   model: z.string().trim().min(1, "Model is required"),
   customPrompt: z
     .string()

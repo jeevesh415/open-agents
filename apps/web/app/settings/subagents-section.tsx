@@ -29,10 +29,10 @@ export function SubagentsSectionSkeleton() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-3">
-          <Skeleton className="h-24 w-full rounded-lg" />
-          <Skeleton className="h-10 w-full rounded-lg" />
-          <Skeleton className="h-10 w-36" />
+        <div className="space-y-2">
+          <Skeleton className="h-[60px] w-full rounded-lg" />
+          <Skeleton className="h-[60px] w-full rounded-lg" />
+          <Skeleton className="h-9 w-full rounded-md" />
         </div>
       </CardContent>
     </Card>
