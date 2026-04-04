@@ -1,9 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { CustomSubagentProfile } from "@open-harness/agent/subagents/profiles";
 import { type ThemePreference, useTheme } from "@/app/providers";
-import { SubagentProfilesSection } from "@/app/settings/subagent-profiles-section";
 import {
   DEFAULT_SANDBOX_TYPE,
   type SandboxType,
@@ -126,16 +124,10 @@ export function PreferencesSection() {
 
   const selectedDefaultModelId =
     preferences?.defaultModelId ?? getDefaultModelOptionId(modelOptions);
-  const selectedSubagentModelId = preferences?.defaultSubagentModelId ?? "auto";
 
   const defaultModelOptions = useMemo(
     () => withMissingModelOption(modelOptions, selectedDefaultModelId),
     [modelOptions, selectedDefaultModelId],
-  );
-  const subagentModelOptions = useMemo(
-    () =>
-      withMissingModelOption(modelOptions, preferences?.defaultSubagentModelId),
-    [modelOptions, preferences?.defaultSubagentModelId],
   );
 
   const handleThemeChange = (nextTheme: string) => {
@@ -150,19 +142,6 @@ export function PreferencesSection() {
       await updatePreferences({ defaultModelId: modelId });
     } catch (error) {
       console.error("Failed to update model preference:", error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleSubagentModelChange = async (value: string) => {
-    setIsSaving(true);
-    try {
-      await updatePreferences({
-        defaultSubagentModelId: value === "auto" ? null : value,
-      });
-    } catch (error) {
-      console.error("Failed to update subagent model preference:", error);
     } finally {
       setIsSaving(false);
     }
@@ -207,20 +186,6 @@ export function PreferencesSection() {
       await updatePreferences({ autoCreatePr: enabled });
     } catch (error) {
       console.error("Failed to update auto-PR preference:", error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleSubagentProfilesSave = async (
-    subagentProfiles: CustomSubagentProfile[],
-  ) => {
-    setIsSaving(true);
-    try {
-      await updatePreferences({ subagentProfiles });
-    } catch (error) {
-      console.error("Failed to update subagent profiles:", error);
-      throw error;
     } finally {
       setIsSaving(false);
     }
@@ -280,46 +245,6 @@ export function PreferencesSection() {
             The AI model used for new chats.
           </p>
         </div>
-
-        <div className="grid gap-2">
-          <Label htmlFor="subagent-model">Subagent Model</Label>
-          <ModelCombobox
-            value={selectedSubagentModelId}
-            items={[
-              { id: "auto", label: "Same as main model" },
-              ...subagentModelOptions.map((option) => ({
-                id: option.id,
-                label: option.label,
-                description: option.description,
-                isVariant: option.isVariant,
-              })),
-            ]}
-            placeholder="Select a model"
-            searchPlaceholder="Search models..."
-            emptyText={modelOptionsLoading ? "Loading..." : "No models found."}
-            disabled={isSaving || modelOptionsLoading}
-            onChange={handleSubagentModelChange}
-          />
-          <p className="text-xs text-muted-foreground">
-            The AI model used for the built-in Explore subagent and as the
-            default model for new custom subagents.
-          </p>
-        </div>
-
-        <SubagentProfilesSection
-          profiles={preferences?.subagentProfiles ?? []}
-          modelItems={subagentModelOptions.map((option) => ({
-            id: option.id,
-            label: option.label,
-            description: option.description,
-            isVariant: option.isVariant,
-          }))}
-          defaultModelId={
-            preferences?.defaultSubagentModelId ?? selectedDefaultModelId
-          }
-          disabled={isSaving || modelOptionsLoading}
-          onSave={handleSubagentProfilesSave}
-        />
 
         <div className="grid gap-2">
           <Label htmlFor="sandbox">Default Sandbox</Label>

@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   BarChart3,
+  Bot,
   Link2,
   LogOut,
   Menu,
@@ -27,6 +28,7 @@ import { LeaderboardSectionSkeleton } from "./leaderboard-section";
 import { ModelVariantsSectionSkeleton } from "./model-variants-section";
 import { PreferencesSectionSkeleton } from "./preferences-section";
 import { ProfileSectionSkeleton } from "./profile-section";
+import { SubagentsSectionSkeleton } from "./subagents-section";
 import { UsageSectionSkeleton } from "./usage-section";
 
 const sidebarItems = [
@@ -41,6 +43,12 @@ const sidebarItems = [
     label: "Preferences",
     href: "/settings/preferences",
     icon: SettingsIcon,
+  },
+  {
+    id: "subagents",
+    label: "Subagents",
+    href: "/settings/subagents",
+    icon: Bot,
   },
   {
     id: "model-variants",
@@ -213,6 +221,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const fallbackContent =
     activeItem?.id === "preferences" ? (
       <PreferencesSectionSkeleton />
+    ) : activeItem?.id === "subagents" ? (
+      <SubagentsSectionSkeleton />
     ) : activeItem?.id === "model-variants" ? (
       <ModelVariantsSectionSkeleton />
     ) : activeItem?.id === "accounts" ? (
