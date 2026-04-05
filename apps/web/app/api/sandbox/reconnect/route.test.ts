@@ -12,18 +12,20 @@ let probeResult: {
   stdout: string;
   stderr: string;
 };
+let connectError: Error | null;
 
 let sessionRecord: {
   id: string;
   userId: string;
   snapshotUrl: string | null;
-  lifecycleState: "failed" | "active" | "hibernated";
+  lifecycleState: "failed" | "active" | "hibernated" | "provisioning";
   lifecycleError: string | null;
   sandboxState: {
     type: "vercel";
+    name?: string;
     sandboxId?: string;
     expiresAt?: number;
-  };
+  } | null;
   lastActivityAt: Date | null;
   hibernateAfter: Date | null;
   sandboxExpiresAt: Date | null;
@@ -62,16 +64,22 @@ mock.module("@/lib/sandbox/lifecycle", () => ({
 mock.module("@open-harness/sandbox", () => ({
   connectSandbox: async (state: {
     type: "vercel";
+    name?: string;
     sandboxId?: string;
     expiresAt?: number;
   }) => {
+    if (connectError) {
+      throw connectError;
+    }
+
     const expiresAt = Date.now() + 2 * 60_000;
     return {
       workingDirectory: "/vercel/sandbox",
       expiresAt,
       exec: async () => probeResult,
       getState: () => ({
-        ...state,
+        type: "vercel" as const,
+        ...(state.name ? { name: state.name } : {}),
         ...(state.sandboxId ? { sandboxId: state.sandboxId } : {}),
         expiresAt,
       }),
@@ -84,6 +92,7 @@ const routeModulePromise = import("./route");
 describe("/api/sandbox/reconnect", () => {
   beforeEach(() => {
     updateCalls.length = 0;
+    connectError = null;
     probeResult = {
       success: true,
       stdout: "ok",
@@ -159,31 +168,66 @@ describe("/api/sandbox/reconnect", () => {
     expect(updateCalls[0]?.patch.sandboxState).toEqual({ type: "vercel" });
   });
 
-  test("marks sandbox expired when the reconnect probe hits a 404", async () => {
+  test("clears missing persistent sandboxes with no snapshot fallback", async () => {
     const { GET } = await routeModulePromise;
 
-    probeResult = {
-      success: false,
-      stdout: "",
-      stderr: "Status code 404 is not ok",
+    sessionRecord.snapshotUrl = null;
+    sessionRecord.lifecycleState = "active";
+    sessionRecord.lifecycleError = null;
+    sessionRecord.sandboxState = {
+      type: "vercel",
+      name: "session_session-1",
     };
+    sessionRecord.sandboxExpiresAt = null;
+    sessionRecord.hibernateAfter = null;
+    connectError = new Error("Sandbox not found");
 
     const response = await GET(
       new Request("http://localhost/api/sandbox/reconnect?sessionId=session-1"),
     );
     const payload = (await response.json()) as {
       status: string;
+      hasSnapshot: boolean;
+      lifecycle: { state: string | null };
+    };
+
+    expect(response.ok).toBe(true);
+    expect(payload.status).toBe("no_sandbox");
+    expect(payload.hasSnapshot).toBe(false);
+    expect(payload.lifecycle.state).toBe("provisioning");
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]?.patch.sandboxState).toEqual({ type: "vercel" });
+    expect(updateCalls[0]?.patch.lifecycleState).toBe("provisioning");
+  });
+
+  test("drops broken persistent identity but keeps snapshot fallback available", async () => {
+    const { GET } = await routeModulePromise;
+
+    sessionRecord.lifecycleState = "active";
+    sessionRecord.lifecycleError = null;
+    sessionRecord.sandboxState = {
+      type: "vercel",
+      name: "session_session-1",
+    };
+    sessionRecord.sandboxExpiresAt = null;
+    sessionRecord.hibernateAfter = null;
+    connectError = new Error("Status code 404 is not ok");
+
+    const response = await GET(
+      new Request("http://localhost/api/sandbox/reconnect?sessionId=session-1"),
+    );
+    const payload = (await response.json()) as {
+      status: string;
+      hasSnapshot: boolean;
       lifecycle: { state: string | null };
     };
 
     expect(response.ok).toBe(true);
     expect(payload.status).toBe("expired");
+    expect(payload.hasSnapshot).toBe(true);
     expect(payload.lifecycle.state).toBe("hibernated");
-
     expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0]?.sessionId).toBe("session-1");
-    expect(updateCalls[0]?.patch.lifecycleState).toBe("hibernated");
-    expect(updateCalls[0]?.patch.lifecycleError).toBeNull();
     expect(updateCalls[0]?.patch.sandboxState).toEqual({ type: "vercel" });
+    expect(updateCalls[0]?.patch.lifecycleState).toBe("hibernated");
   });
 });

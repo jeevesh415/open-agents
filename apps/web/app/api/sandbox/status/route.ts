@@ -9,7 +9,10 @@ import {
   getSandboxExpiresAtDate,
 } from "@/lib/sandbox/lifecycle";
 import { kickSandboxLifecycleWorkflow } from "@/lib/sandbox/lifecycle-kick";
-import { hasRuntimeSandboxState } from "@/lib/sandbox/utils";
+import {
+  hasLiveRuntimeSandboxState,
+  isPersistentSandbox,
+} from "@/lib/sandbox/utils";
 
 export type SandboxStatusResponse = {
   status: "active" | "no_sandbox";
@@ -47,18 +50,23 @@ export async function GET(req: Request): Promise<Response> {
 
   const { sessionRecord } = sessionContext;
   let effectiveSessionRecord = sessionRecord;
-  const hasRuntimeState = hasRuntimeSandboxState(sessionRecord.sandboxState);
+  const hasLiveRuntimeState = hasLiveRuntimeSandboxState(
+    sessionRecord.sandboxState,
+  );
+  const hasSnapshot =
+    isPersistentSandbox(sessionRecord.sandboxState) ||
+    !!sessionRecord.snapshotUrl;
 
-  // Check expiry: the DB may still have sandboxId/files but the VM has expired.
-  // Use the same 10s buffer as the chat route's isSandboxActive() so they agree.
+  // Check expiry: the DB may still have a running sandbox session recorded even
+  // though the VM is already due to expire.
   let isExpired = false;
-  if (hasRuntimeState && sessionRecord.sandboxExpiresAt) {
+  if (hasLiveRuntimeState && sessionRecord.sandboxExpiresAt) {
     isExpired =
       Date.now() >=
       sessionRecord.sandboxExpiresAt.getTime() - SANDBOX_EXPIRES_BUFFER_MS;
   }
 
-  const isActive = hasRuntimeState && !isExpired;
+  const isActive = hasLiveRuntimeState && !isExpired;
 
   // If the lifecycle evaluator previously failed but runtime state is still
   // active, recover lifecycle state so UI does not get stuck in "Paused".
@@ -75,7 +83,10 @@ export async function GET(req: Request): Promise<Response> {
 
   // Safety net: if the sandbox has stale runtime state (expired or overdue for
   // hibernation), kick the lifecycle to clean up DB state in the background.
-  if (hasRuntimeState && effectiveSessionRecord.lifecycleState === "active") {
+  if (
+    hasLiveRuntimeState &&
+    effectiveSessionRecord.lifecycleState === "active"
+  ) {
     const now = Date.now();
     const dueAtMs = getLifecycleDueAtMs(effectiveSessionRecord);
     if (isExpired || now >= dueAtMs) {
@@ -88,7 +99,7 @@ export async function GET(req: Request): Promise<Response> {
 
   return Response.json({
     status: isActive ? "active" : "no_sandbox",
-    hasSnapshot: !!effectiveSessionRecord.snapshotUrl,
+    hasSnapshot,
     lifecycleVersion: effectiveSessionRecord.lifecycleVersion,
     lifecycle: {
       serverTime: Date.now(),

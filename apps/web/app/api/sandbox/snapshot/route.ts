@@ -20,6 +20,7 @@ import {
   clearSandboxState,
   hasRuntimeSandboxState,
   isPersistentSandbox,
+  isSandboxMissingError,
 } from "@/lib/sandbox/utils";
 
 interface CreateSnapshotRequest {
@@ -143,7 +144,7 @@ export async function PUT(req: Request) {
     return sessionContext.response;
   }
 
-  const { sessionRecord } = sessionContext;
+  let { sessionRecord } = sessionContext;
 
   // --- Persistent sandbox path: has a name, just resume ---
   if (isPersistentSandbox(sessionRecord.sandboxState)) {
@@ -200,12 +201,52 @@ export async function PUT(req: Request) {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(
-        `[Snapshot Restore] session=${sessionId} success=false persistent=true error=${message}`,
-      );
-      return Response.json(
-        { error: `Failed to resume persistent sandbox: ${message}` },
-        { status: 500 },
+      if (!isSandboxMissingError(message)) {
+        console.error(
+          `[Snapshot Restore] session=${sessionId} success=false persistent=true error=${message}`,
+        );
+        return Response.json(
+          { error: `Failed to resume persistent sandbox: ${message}` },
+          { status: 500 },
+        );
+      }
+
+      const hasFallbackSnapshot = !!sessionRecord.snapshotUrl;
+      const downgradedSession = await updateSession(sessionId, {
+        sandboxState: { type: sessionRecord.sandboxState!.type },
+        ...(hasFallbackSnapshot
+          ? buildHibernatedLifecycleUpdate()
+          : {
+              lifecycleState: "provisioning",
+              sandboxExpiresAt: null,
+              hibernateAfter: null,
+              lifecycleRunId: null,
+              lifecycleError: null,
+            }),
+      });
+
+      sessionRecord =
+        downgradedSession ??
+        ({
+          ...sessionRecord,
+          sandboxState: { type: sessionRecord.sandboxState!.type },
+        } as typeof sessionRecord);
+
+      if (!hasFallbackSnapshot) {
+        console.error(
+          `[Snapshot Restore] session=${sessionId} success=false persistent=true missing=true error=${message}`,
+        );
+        return Response.json(
+          {
+            error:
+              "Persistent sandbox no longer exists. Create a new sandbox to continue.",
+          },
+          { status: 409 },
+        );
+      }
+
+      console.warn(
+        `[Snapshot Restore] session=${sessionId} persistent=true missing=true falling_back_to_snapshot=${sessionRecord.snapshotUrl}`,
       );
     }
   }

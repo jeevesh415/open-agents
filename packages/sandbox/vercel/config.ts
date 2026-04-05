@@ -89,9 +89,7 @@ export interface VercelSandboxConnectConfig {
   hooks?: SandboxHooks;
   /**
    * Remaining timeout in milliseconds for this sandbox.
-   * If not provided, defaults to 5 minutes (DEFAULT_RECONNECT_TIMEOUT_MS).
-   * This ensures proactive stop and hooks (beforeStop, onTimeout) work correctly.
-   * Provide an explicit value if you know the exact remaining time.
+   * If not provided, reconnect derives it from the current SDK session/sandbox metadata.
    */
   remainingTimeout?: number;
 }

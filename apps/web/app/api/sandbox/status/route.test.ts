@@ -18,10 +18,11 @@ let sessionRecord: {
   userId: string;
   sandboxState: {
     type: "vercel";
-    sandboxId: string;
-    expiresAt: number;
-  };
-  lifecycleState: "active" | "failed";
+    sandboxId?: string;
+    name?: string;
+    expiresAt?: number;
+  } | null;
+  lifecycleState: "active" | "failed" | "hibernated";
   lifecycleError: string | null;
   lifecycleVersion: number;
   hibernateAfter: Date | null;
@@ -31,13 +32,12 @@ let sessionRecord: {
   updatedAt: Date;
 };
 
-mock.module("@/lib/session/get-server-session", () => ({
-  getServerSession: async () => ({ user: { id: "user-1" } }),
+mock.module("@/app/api/sessions/_lib/session-context", () => ({
+  requireAuthenticatedUser: async () => ({ ok: true, userId: "user-1" }),
+  requireOwnedSession: async () => ({ ok: true, sessionRecord }),
 }));
 
 mock.module("@/lib/db/sessions", () => ({
-  getChatsBySessionId: async () => [],
-  getSessionById: async () => sessionRecord,
   updateSession: async (sessionId: string, patch: Record<string, unknown>) => {
     updateCalls.push({ sessionId, patch });
     sessionRecord = {
@@ -46,6 +46,21 @@ mock.module("@/lib/db/sessions", () => ({
     } as typeof sessionRecord;
     return sessionRecord;
   },
+}));
+
+mock.module("@/lib/sandbox/lifecycle", () => ({
+  getLifecycleDueAtMs: (session: {
+    hibernateAfter: Date | null;
+    lastActivityAt: Date | null;
+    updatedAt: Date;
+  }) =>
+    session.hibernateAfter?.getTime() ??
+    session.lastActivityAt?.getTime() ??
+    session.updatedAt.getTime(),
+  getSandboxExpiresAtDate: (
+    state: { expiresAt?: unknown } | null | undefined,
+  ) =>
+    typeof state?.expiresAt === "number" ? new Date(state.expiresAt) : null,
 }));
 
 mock.module("@/lib/sandbox/lifecycle-kick", () => ({
@@ -108,16 +123,47 @@ describe("/api/sandbox/status lifecycle safety net", () => {
     );
     const payload = (await response.json()) as {
       status: string;
+      hasSnapshot: boolean;
       lifecycle: { state: string | null };
     };
 
     expect(response.ok).toBe(true);
     expect(payload.status).toBe("active");
+    expect(payload.hasSnapshot).toBe(false);
     expect(payload.lifecycle.state).toBe("active");
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0]?.sessionId).toBe("session-1");
     expect(updateCalls[0]?.patch.lifecycleState).toBe("active");
     expect(updateCalls[0]?.patch.lifecycleError).toBeNull();
+    expect(kickCalls).toHaveLength(0);
+  });
+
+  test("treats hibernated persistent sandboxes as resumable, not active", async () => {
+    const { GET } = await routeModulePromise;
+
+    sessionRecord.sandboxState = {
+      type: "vercel",
+      name: "session_session-1",
+    };
+    sessionRecord.lifecycleState = "hibernated";
+    sessionRecord.hibernateAfter = null;
+    sessionRecord.sandboxExpiresAt = null;
+    sessionRecord.snapshotUrl = null;
+
+    const response = await GET(
+      new Request("http://localhost/api/sandbox/status?sessionId=session-1"),
+    );
+    const payload = (await response.json()) as {
+      status: string;
+      hasSnapshot: boolean;
+      lifecycle: { state: string | null };
+    };
+
+    expect(response.ok).toBe(true);
+    expect(payload.status).toBe("no_sandbox");
+    expect(payload.hasSnapshot).toBe(true);
+    expect(payload.lifecycle.state).toBe("hibernated");
+    expect(updateCalls).toHaveLength(0);
     expect(kickCalls).toHaveLength(0);
   });
 });

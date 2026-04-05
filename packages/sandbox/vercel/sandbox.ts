@@ -16,7 +16,7 @@ const DEFAULT_WORKING_DIRECTORY = "/vercel/sandbox";
 const TIMEOUT_BUFFER_MS = 30_000; // 30 seconds buffer for beforeStop hook
 const MAX_SDK_TIMEOUT_MS = 18_000_000; // Vercel API limit: 5 hours
 const MAX_PROACTIVE_TIMEOUT_MS = MAX_SDK_TIMEOUT_MS - TIMEOUT_BUFFER_MS;
-const DEFAULT_RECONNECT_TIMEOUT_MS = 300_000; // 5 minutes default timeout for reconnected sandboxes
+const DEFAULT_RECONNECT_TIMEOUT_MS = 300_000; // Last-resort reconnect timeout
 const DETACHED_QUICK_FAILURE_WINDOW_MS = 2_000;
 
 interface SandboxRouteLike {
@@ -37,6 +37,33 @@ function buildAuthenticatedGitHubUrl(
 
   const [, owner, repo] = githubUrlMatch;
   return `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
+}
+
+function getSdkReconnectTimeout(sdk: VercelSandboxSDK): number | undefined {
+  const sandboxTimeout = sdk.timeout;
+  const fallbackTimeout =
+    typeof sandboxTimeout === "number" &&
+    Number.isFinite(sandboxTimeout) &&
+    sandboxTimeout > 0
+      ? sandboxTimeout
+      : undefined;
+
+  try {
+    const session = sdk.currentSession();
+    const sessionTimeout = session.timeout;
+    if (!Number.isFinite(sessionTimeout) || sessionTimeout <= 0) {
+      return fallbackTimeout;
+    }
+
+    const sessionStartAt = session.startedAt ?? session.requestedAt;
+    const remainingTimeout = sessionStartAt
+      ? sessionStartAt.getTime() + sessionTimeout - Date.now()
+      : sessionTimeout;
+
+    return remainingTimeout > 10_000 ? remainingTimeout : fallbackTimeout;
+  } catch {
+    return fallbackTimeout;
+  }
 }
 
 /**
@@ -547,8 +574,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       hooks?: SandboxHooks;
       /**
        * Remaining timeout in ms for this sandbox.
-       * If not provided, defaults to DEFAULT_RECONNECT_TIMEOUT_MS (5 minutes).
-       * This ensures timeout tracking and proactive stop work correctly.
+       * When omitted, reconnect derives it from the SDK session/sandbox metadata.
        */
       remainingTimeout?: number;
       /** Ports that were declared at creation time (for preview URL display) */
@@ -557,11 +583,14 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
   ): Promise<VercelSandbox> {
     const sdk = await VercelSandboxSDK.get({ name });
 
-    // Use provided remainingTimeout or default to DEFAULT_RECONNECT_TIMEOUT_MS
-    // This ensures timeout tracking is always enabled for reconnected sandboxes,
-    // allowing beforeStop and onTimeout hooks to fire properly.
+    // Prefer the caller-provided remaining timeout, otherwise derive it from the
+    // current SDK session (or sandbox default timeout after auto-resume).
+    // This keeps reconnect countdowns aligned with the real Vercel timeout after
+    // a persistent sandbox is resumed from hibernation.
     const remainingTimeout =
-      options.remainingTimeout ?? DEFAULT_RECONNECT_TIMEOUT_MS;
+      options.remainingTimeout ??
+      getSdkReconnectTimeout(sdk) ??
+      DEFAULT_RECONNECT_TIMEOUT_MS;
     const startTime = Date.now();
 
     const sandbox = new VercelSandbox(

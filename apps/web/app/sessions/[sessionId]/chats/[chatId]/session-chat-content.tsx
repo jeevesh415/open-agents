@@ -1855,6 +1855,7 @@ export function SessionChatContent({
         }
 
         shouldRefreshRestoredWorkspaceRef.current = false;
+        await requestStatusSync("force").catch(() => undefined);
         setRestoreError(`Snapshot restore failed: ${errorMsg}`);
         return;
       }
@@ -1891,6 +1892,7 @@ export function SessionChatContent({
   }, [
     session.id,
     session.sandboxState,
+    requestStatusSync,
     setSandboxTypeFromUnknown,
     waitForSandboxReady,
   ]);

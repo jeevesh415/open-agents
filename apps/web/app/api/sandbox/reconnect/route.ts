@@ -13,6 +13,7 @@ import {
   clearSandboxState,
   hasRuntimeSandboxState,
   isPersistentSandbox,
+  isSandboxMissingError,
   isSandboxUnavailableError,
 } from "@/lib/sandbox/utils";
 
@@ -172,6 +173,33 @@ export async function GET(req: Request): Promise<Response> {
         hasSnapshot,
         expiresAt: safeExpiresAt,
         lifecycle: buildLifecyclePayload(sessionRecord),
+      } satisfies ReconnectResponse);
+    }
+
+    if (persistent && isSandboxMissingError(message)) {
+      const hasFallbackSnapshot = !!sessionRecord.snapshotUrl;
+      const updatedSession = await updateSession(sessionId, {
+        sandboxState: { type: state.type } as SandboxState,
+        ...(hasFallbackSnapshot
+          ? buildHibernatedLifecycleUpdate()
+          : {
+              lifecycleState: "provisioning",
+              sandboxExpiresAt: null,
+              hibernateAfter: null,
+              lifecycleRunId: null,
+              lifecycleError: null,
+            }),
+      });
+      const status: ReconnectStatus = hasFallbackSnapshot
+        ? "expired"
+        : "no_sandbox";
+      console.error(
+        `[Reconnect] session=${sessionId} status=${status} hasSnapshot=${hasFallbackSnapshot} persistent=true missing=true error=${message}`,
+      );
+      return Response.json({
+        status,
+        hasSnapshot: hasFallbackSnapshot,
+        lifecycle: buildLifecyclePayload(updatedSession ?? sessionRecord),
       } satisfies ReconnectResponse);
     }
 

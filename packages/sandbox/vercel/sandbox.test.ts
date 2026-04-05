@@ -25,6 +25,9 @@ const createCalls: Array<Record<string, unknown>> = [];
 const runCommandCalls: MockRunCommandParams[] = [];
 const writeFilesCalls: Array<{ path: string; content: Buffer }[]> = [];
 let readFileToBufferResult: Buffer | null = Buffer.from("");
+let mockSandboxTimeout = 18_000_000;
+let mockSessionStartedAt: Date | undefined;
+let mockSessionRequestedAt = new Date();
 
 let runCommandMock = async (
   _params?: MockRunCommandParams,
@@ -52,8 +55,19 @@ mock.module("@vercel/sandbox", () => ({
   Sandbox: {
     create: async (params: Record<string, unknown>) => {
       createCalls.push(params);
+      const name =
+        typeof params.name === "string" && params.name.length > 0
+          ? params.name
+          : "sbx-created";
       return {
+        name,
         sandboxId: "sbx-created",
+        timeout: mockSandboxTimeout,
+        currentSession: () => ({
+          timeout: mockSandboxTimeout,
+          startedAt: mockSessionStartedAt,
+          requestedAt: mockSessionRequestedAt,
+        }),
         routes: Array.from(portDomains.keys()).map((port) => {
           const domain =
             portDomains.get(port) ?? `https://sbx-${port}.vercel.run`;
@@ -75,8 +89,15 @@ mock.module("@vercel/sandbox", () => ({
         stop: async () => {},
       };
     },
-    get: async ({ sandboxId }: { sandboxId: string }) => ({
-      sandboxId,
+    get: async ({ name }: { name: string }) => ({
+      name,
+      sandboxId: name,
+      timeout: mockSandboxTimeout,
+      currentSession: () => ({
+        timeout: mockSandboxTimeout,
+        startedAt: mockSessionStartedAt,
+        requestedAt: mockSessionRequestedAt,
+      }),
       routes: Array.from(portDomains.keys()).map((port) => {
         const domain =
           portDomains.get(port) ?? `https://sbx-${port}.vercel.run`;
@@ -111,6 +132,9 @@ beforeEach(() => {
   runCommandCalls.length = 0;
   writeFilesCalls.length = 0;
   readFileToBufferResult = Buffer.from("");
+  mockSandboxTimeout = 18_000_000;
+  mockSessionStartedAt = new Date();
+  mockSessionRequestedAt = new Date();
   portDomains.clear();
   missingPorts.clear();
   portDomains.set(80, "https://sbx-80.vercel.run");
@@ -196,6 +220,29 @@ describe("VercelSandbox.environmentDetails", () => {
     expect(lastRunCommandEnv?.SANDBOX_URL_3000).toBe(
       "https://sbx-3000.vercel.run",
     );
+  });
+});
+
+describe("VercelSandbox.connect", () => {
+  test("derives reconnect timeout from the SDK session when none is provided", async () => {
+    mockSandboxTimeout = 18_000_000;
+    mockSessionStartedAt = new Date(Date.now() - 60_000);
+    mockSessionRequestedAt = mockSessionStartedAt;
+
+    const sandbox = await sandboxModule.VercelSandbox.connect("sbx-test");
+
+    expect(sandbox.timeout).toBeGreaterThanOrEqual(17_938_000);
+    expect(sandbox.timeout).toBeLessThanOrEqual(17_942_000);
+  });
+
+  test("falls back to the SDK sandbox timeout when session timing is unavailable", async () => {
+    mockSandboxTimeout = 1_800_000;
+    mockSessionStartedAt = undefined;
+    mockSessionRequestedAt = new Date(0);
+
+    const sandbox = await sandboxModule.VercelSandbox.connect("sbx-test");
+
+    expect(sandbox.timeout).toBe(1_800_000);
   });
 });
 

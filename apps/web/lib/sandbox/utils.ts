@@ -89,16 +89,49 @@ export function hasRuntimeSandboxState(state: unknown): boolean {
 }
 
 /**
+ * Check if sandbox state currently points to a live VM session.
+ *
+ * Persistent sandboxes are only live when they still have a session expiry.
+ * Name-only persistent state is resumable, but not currently running.
+ */
+export function hasLiveRuntimeSandboxState(state: unknown): boolean {
+  if (!state || typeof state !== "object") return false;
+  if (hasLegacyRuntimeSandboxState(state)) {
+    return true;
+  }
+
+  const sandboxState = state as {
+    name?: unknown;
+    expiresAt?: unknown;
+  };
+
+  return (
+    hasNonEmptyString(sandboxState.name) &&
+    typeof sandboxState.expiresAt === "number"
+  );
+}
+
+/**
+ * Check if an error message indicates the persistent sandbox itself no longer exists.
+ */
+export function isSandboxMissingError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("status code 410") ||
+    normalized.includes("status code 404") ||
+    normalized.includes("sandbox not found")
+  );
+}
+
+/**
  * Check if an error message indicates the sandbox VM is permanently unavailable.
  */
 export function isSandboxUnavailableError(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
     normalized.includes("expected a stream of command data") ||
-    normalized.includes("status code 410") ||
-    normalized.includes("status code 404") ||
+    isSandboxMissingError(message) ||
     normalized.includes("sandbox is stopped") ||
-    normalized.includes("sandbox not found") ||
     normalized.includes("sandbox probe failed")
   );
 }
