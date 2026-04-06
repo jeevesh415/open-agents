@@ -333,7 +333,7 @@ export function MergePrDialog({
               <Button
                 onClick={() => void handleMerge()}
                 disabled={mergeDisabled}
-                className="min-w-0 flex-1 sm:flex-none rounded-r-none"
+                className={`min-w-0 flex-1 sm:flex-none${hasMultipleMethods ? " rounded-r-none" : ""}`}
               >
                 {isSubmitting ? (
                   <>
