@@ -30,6 +30,7 @@ export function ChatTabs({ activeChatId }: ChatTabsProps) {
   const {
     activeView,
     setActiveView,
+    focusedDiffFile,
     setFocusedDiffFile,
     changesTabDismissed,
     setChangesTabDismissed,
@@ -182,13 +183,13 @@ export function ChatTabs({ activeChatId }: ChatTabsProps) {
             );
           })}
 
-          {/* Changes tab — only shown when a diff file is opened, hidden when dismissed */}
-          {!changesTabDismissed && activeView === "diff" && (
+          {/* Changes tab — persists until explicitly closed */}
+          {!changesTabDismissed && focusedDiffFile && (
             <button
               type="button"
               onClick={() => setActiveView("diff")}
               className={cn(
-                "group relative flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
+                "group relative flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
                 activeView === "diff"
                   ? "border-foreground text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground",

@@ -181,21 +181,17 @@ function DiffFileStatusIcon({ status }: { status: DiffFile["status"] }) {
   return <SquareDot className="h-4 w-4 shrink-0 text-yellow-500" />;
 }
 
-type DiffScope = "all" | "uncommitted";
-
 function isUncommittedFile(file: DiffFile): boolean {
   return file.stagingStatus === "unstaged" || file.stagingStatus === "partial";
 }
 
 function DiffFileList({ files }: { files: DiffFile[] }) {
-  const { openDiffToFile } = useGitPanel();
-  const [scope, setScope] = useState<DiffScope>("all");
+  const { openDiffToFile, diffScope } = useGitPanel();
 
   const filteredFiles =
-    scope === "all" ? files : files.filter(isUncommittedFile);
-  const uncommittedCount = files.filter(isUncommittedFile).length;
+    diffScope === "branch" ? files : files.filter(isUncommittedFile);
 
-  if (files.length === 0) {
+  if (filteredFiles.length === 0) {
     return (
       <div className="px-3 py-6 text-center text-xs text-muted-foreground">
         No file changes yet
@@ -205,35 +201,6 @@ function DiffFileList({ files }: { files: DiffFile[] }) {
 
   return (
     <div>
-      {/* Scope filter */}
-      {uncommittedCount > 0 && uncommittedCount < files.length && (
-        <div className="mb-1 flex items-center gap-1 px-1">
-          <button
-            type="button"
-            onClick={() => setScope("all")}
-            className={cn(
-              "rounded px-2 py-0.5 text-[10px] font-medium transition-colors",
-              scope === "all"
-                ? "bg-secondary text-secondary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            onClick={() => setScope("uncommitted")}
-            className={cn(
-              "rounded px-2 py-0.5 text-[10px] font-medium transition-colors",
-              scope === "uncommitted"
-                ? "bg-secondary text-secondary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            Uncommitted
-          </button>
-        </div>
-      )}
       <div className="space-y-px">
         {filteredFiles.map((file) => {
           const fileName = file.path.split("/").pop() ?? file.path;
@@ -1149,7 +1116,8 @@ function InlineMergePanel({
 /* ------------------------------------------------------------------ */
 
 export function GitPanel(props: GitPanelProps) {
-  const { gitPanelOpen, gitPanelTab, setGitPanelTab } = useGitPanel();
+  const { gitPanelOpen, gitPanelTab, setGitPanelTab, diffScope, setDiffScope } =
+    useGitPanel();
 
   if (!gitPanelOpen) return null;
 
@@ -1354,22 +1322,71 @@ export function GitPanel(props: GitPanelProps) {
               <div className="mb-2 border-t border-border" />
             )}
 
+            {/* Scope toggle */}
+            {diffFiles && diffFiles.length > 0 && (
+              <div className="mb-2 flex items-center gap-1 px-1">
+                <button
+                  type="button"
+                  onClick={() => setDiffScope("local")}
+                  className={cn(
+                    "rounded px-2 py-0.5 text-[10px] font-medium transition-colors",
+                    diffScope === "local"
+                      ? "bg-secondary text-secondary-foreground"
+                      : "text-muted-foreground hover:bg-muted/50",
+                  )}
+                >
+                  Local
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDiffScope("branch")}
+                  className={cn(
+                    "rounded px-2 py-0.5 text-[10px] font-medium transition-colors",
+                    diffScope === "branch"
+                      ? "bg-secondary text-secondary-foreground"
+                      : "text-muted-foreground hover:bg-muted/50",
+                  )}
+                >
+                  All Changes
+                </button>
+              </div>
+            )}
+
             {diffFiles && diffFiles.length > 0 ? (
               <>
-                {hasDiffChanges && (
-                  <div className="mb-2 flex items-center gap-2 px-2 text-xs text-muted-foreground">
-                    <span>
-                      {diffFiles.length} file
-                      {diffFiles.length !== 1 ? "s" : ""} changed
-                    </span>
-                    <span className="text-green-600 dark:text-green-500">
-                      +{diffSummary!.totalAdditions}
-                    </span>
-                    <span className="text-red-600 dark:text-red-400">
-                      -{diffSummary!.totalDeletions}
-                    </span>
-                  </div>
-                )}
+                {hasDiffChanges &&
+                  (() => {
+                    const visibleFiles =
+                      diffScope === "branch"
+                        ? diffFiles
+                        : diffFiles.filter(isUncommittedFile);
+                    const adds = visibleFiles.reduce(
+                      (sum, f) => sum + f.additions,
+                      0,
+                    );
+                    const dels = visibleFiles.reduce(
+                      (sum, f) => sum + f.deletions,
+                      0,
+                    );
+                    return (
+                      <div className="mb-2 flex items-center gap-2 px-2 text-xs text-muted-foreground">
+                        <span>
+                          {visibleFiles.length} file
+                          {visibleFiles.length !== 1 ? "s" : ""} changed
+                        </span>
+                        {adds > 0 && (
+                          <span className="text-green-600 dark:text-green-500">
+                            +{adds}
+                          </span>
+                        )}
+                        {dels > 0 && (
+                          <span className="text-red-600 dark:text-red-400">
+                            -{dels}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 <DiffFileList files={diffFiles} />
               </>
             ) : (

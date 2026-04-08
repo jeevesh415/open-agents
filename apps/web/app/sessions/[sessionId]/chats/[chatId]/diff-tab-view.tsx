@@ -104,7 +104,7 @@ export function DiffTabView() {
     sandboxInfo,
     refreshDiff,
   } = useSessionChatWorkspaceContext();
-  const { focusedDiffFile } = useGitPanel();
+  const { focusedDiffFile, diffScope } = useGitPanel();
   const isMobile = useIsMobile();
   const { preferences } = useUserPreferences();
   const [diffStyle, setDiffStyle] = useState<DiffStyle>("unified");
@@ -257,29 +257,49 @@ export function DiffTabView() {
           </div>
         )}
 
-        {!diffLoading && !diffError && file && (
-          <div>
-            {file.generated ? (
-              <div className="px-4 py-6 text-center text-xs text-muted-foreground">
-                Generated file — diff content hidden
+        {!diffLoading &&
+          !diffError &&
+          file &&
+          (() => {
+            const isLocalScope = diffScope === "local";
+            const hasLocalChanges =
+              file.stagingStatus === "unstaged" ||
+              file.stagingStatus === "partial";
+
+            if (isLocalScope && !hasLocalChanges) {
+              return (
+                <div className="px-4 py-8 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    No local changes — already committed on branch
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div>
+                {file.generated ? (
+                  <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+                    Generated file — diff content hidden
+                  </div>
+                ) : file.diff ? (
+                  <PatchDiff
+                    key={`${file.path}-${diffStyle}`}
+                    patch={file.diff}
+                    options={
+                      shouldWrapDiffContent(file.path)
+                        ? { ...baseOptions, overflow: "wrap" as const }
+                        : baseOptions
+                    }
+                  />
+                ) : (
+                  <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+                    No diff content available
+                  </div>
+                )}
               </div>
-            ) : file.diff ? (
-              <PatchDiff
-                key={`${file.path}-${diffStyle}`}
-                patch={file.diff}
-                options={
-                  shouldWrapDiffContent(file.path)
-                    ? { ...baseOptions, overflow: "wrap" as const }
-                    : baseOptions
-                }
-              />
-            ) : (
-              <div className="px-4 py-6 text-center text-xs text-muted-foreground">
-                No diff content available
-              </div>
-            )}
-          </div>
-        )}
+            );
+          })()}
       </div>
     </div>
   );

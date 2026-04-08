@@ -13,6 +13,7 @@ import {
 
 export type GitPanelTab = "code" | "diff" | "pr";
 export type ActiveView = "chat" | "diff";
+export type DiffScope = "local" | "branch";
 
 type GitPanelContextValue = {
   /** Whether the right git panel is open */
@@ -39,6 +40,10 @@ type GitPanelContextValue = {
   /** Open the diff tab in the main content area, optionally focused on a file */
   openDiffToFile: (filePath: string) => void;
 
+  /** Diff scope: "local" = uncommitted only, "branch" = all changes vs base */
+  diffScope: DiffScope;
+  setDiffScope: (scope: DiffScope) => void;
+
   /** Share dialog trigger (set by per-chat page, called by header) */
   shareRequested: boolean;
   setShareRequested: (requested: boolean) => void;
@@ -57,6 +62,7 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveView] = useState<ActiveView>("chat");
   const [focusedDiffFile, setFocusedDiffFile] = useState<string | null>(null);
   const [changesTabDismissed, setChangesTabDismissed] = useState(false);
+  const [diffScope, setDiffScope] = useState<DiffScope>("local");
   const [shareRequested, setShareRequested] = useState(false);
   const panelPortalRef = useRef<HTMLDivElement | null>(null);
 
@@ -84,6 +90,8 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
       focusedDiffFile,
       setFocusedDiffFile,
       openDiffToFile,
+      diffScope,
+      setDiffScope,
       shareRequested,
       setShareRequested,
       panelPortalRef,
@@ -96,6 +104,7 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
       changesTabDismissed,
       focusedDiffFile,
       openDiffToFile,
+      diffScope,
       shareRequested,
     ],
   );
