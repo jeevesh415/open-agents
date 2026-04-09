@@ -307,7 +307,7 @@ export function DiffTabView() {
             // The effect above will auto-redirect or clear; show empty state while pending.
             if (isLocalScope && !hasLocalChanges) {
               return (
-                <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground/50">
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/50">
                   <FileText className="h-8 w-8" />
                   <p className="text-sm">No uncommitted changes to display</p>
                 </div>
