@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
   useMemo,
   useRef,
@@ -36,6 +37,7 @@ type GitPanelContextValue = {
   /** File path to scroll to in the diff tab view */
   focusedDiffFile: string | null;
   setFocusedDiffFile: (file: string | null) => void;
+  focusedDiffRequestId: number;
 
   /** Open the diff tab in the main content area, optionally focused on a file */
   openDiffToFile: (filePath: string) => void;
@@ -51,6 +53,10 @@ type GitPanelContextValue = {
   /** Number of changed files (for badge display on toggle button) */
   changesCount: number;
   setChangesCount: (count: number) => void;
+
+  /** Whether there are committed (pushed) changes on the branch */
+  hasCommittedChanges: boolean;
+  setHasCommittedChanges: (has: boolean) => void;
 
   /** Share dialog trigger (set by per-chat page, called by header) */
   shareRequested: boolean;
@@ -72,10 +78,12 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
   const [gitPanelTab, setGitPanelTab] = useState<GitPanelTab>("diff");
   const [activeView, setActiveView] = useState<ActiveView>("chat");
   const [focusedDiffFile, setFocusedDiffFile] = useState<string | null>(null);
+  const [focusedDiffRequestId, setFocusedDiffRequestId] = useState(0);
   const [changesTabDismissed, setChangesTabDismissed] = useState(false);
-  const [diffScope, setDiffScope] = useState<DiffScope>("branch");
+  const [diffScope, setDiffScope] = useState<DiffScope>("uncommitted");
   const [hasActionNeeded, setHasActionNeeded] = useState(false);
   const [changesCount, setChangesCount] = useState(0);
+  const [hasCommittedChanges, setHasCommittedChanges] = useState(false);
   const [shareRequested, setShareRequested] = useState(false);
   const panelPortalRef = useRef<HTMLDivElement | null>(null);
   const headerActionsRef = useRef<HTMLDivElement | null>(null);
@@ -84,8 +92,29 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
     setGitPanelOpen((prev) => !prev);
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isGitPanelShortcut =
+        event.code === "KeyB" &&
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        !event.altKey;
+
+      if (!isGitPanelShortcut || event.repeat) {
+        return;
+      }
+
+      event.preventDefault();
+      toggleGitPanel();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [toggleGitPanel]);
+
   const openDiffToFile = useCallback((filePath: string) => {
     setFocusedDiffFile(filePath);
+    setFocusedDiffRequestId((prev) => prev + 1);
     setActiveView("diff");
     setChangesTabDismissed(false);
   }, []);
@@ -103,6 +132,7 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
       setChangesTabDismissed,
       focusedDiffFile,
       setFocusedDiffFile,
+      focusedDiffRequestId,
       openDiffToFile,
       diffScope,
       setDiffScope,
@@ -110,6 +140,8 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
       setHasActionNeeded,
       changesCount,
       setChangesCount,
+      hasCommittedChanges,
+      setHasCommittedChanges,
       shareRequested,
       setShareRequested,
       panelPortalRef,
@@ -122,10 +154,12 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
       activeView,
       changesTabDismissed,
       focusedDiffFile,
+      focusedDiffRequestId,
       openDiffToFile,
       diffScope,
       hasActionNeeded,
       changesCount,
+      hasCommittedChanges,
       shareRequested,
     ],
   );

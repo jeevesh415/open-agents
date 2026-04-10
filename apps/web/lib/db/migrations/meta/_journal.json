@@ -187,8 +187,15 @@
     {
       "idx": 26,
       "version": "7",
-      "when": 1775828007478,
-      "tag": "0026_faithful_baron_zemo",
+      "when": 1775687505858,
+      "tag": "0026_rapid_prima",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1775831440755,
+      "tag": "0027_glamorous_ted_forrester",
       "breakpoints": true
     }
   ]

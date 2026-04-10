@@ -40,6 +40,7 @@ import useSWR from "swr";
 import type { ChatRefreshResponse } from "@/app/api/sessions/[sessionId]/chats/[chatId]/route";
 import type { MergePullRequestResponse } from "@/app/api/sessions/[sessionId]/merge/route";
 import type { PrDeploymentResponse } from "@/app/api/sessions/[sessionId]/pr-deployment/route";
+import type { PullRequestCheckRun } from "@/lib/github/client";
 import type {
   WebAgentCommitDataPart,
   WebAgentPrDataPart,
@@ -118,9 +119,7 @@ import { useStreamRecovery } from "./hooks/use-stream-recovery";
 import { useAutoCommitStatus } from "./hooks/use-auto-commit-status";
 import { useCodeEditor } from "./hooks/use-code-editor";
 import { useDevServer } from "./hooks/use-dev-server";
-
 import { useGitPanel } from "./git-panel-context";
-import { GitPanel } from "./git-panel";
 import {
   createSandbox,
   getSandboxCreateErrorDetails,
@@ -160,6 +159,9 @@ const DiffTabView = dynamic(
   () => import("./diff-tab-view").then((m) => m.DiffTabView),
   { ssr: false },
 );
+const GitPanel = dynamic(() => import("./git-panel").then((m) => m.GitPanel), {
+  ssr: false,
+});
 
 const emptySubscribe = () => () => {};
 
@@ -881,10 +883,13 @@ export function SessionChatContent({
   const hasMounted = useHasMounted();
   const {
     activeView,
+    gitPanelOpen,
     shareRequested,
+    setGitPanelOpen,
     setShareRequested,
     setHasActionNeeded,
     setChangesCount,
+    setHasCommittedChanges,
     panelPortalRef,
     headerActionsRef,
   } = useGitPanel();
@@ -1042,8 +1047,10 @@ export function SessionChatContent({
   const {
     sandboxInfo,
     diff,
+    diffRefreshing,
     refreshDiff,
     gitStatus,
+    gitStatusLoading,
     refreshGitStatus,
     files,
     filesLoading,
@@ -1668,6 +1675,46 @@ export function SessionChatContent({
       }
     },
     [chatInfo.id, sendMessage, setChatStreaming],
+  );
+
+  const handleFixChecks = useCallback(
+    async (failedRuns: PullRequestCheckRun[]) => {
+      let text = "";
+      try {
+        const res = await fetch(`/api/sessions/${session.id}/checks/fix`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ checkRuns: failedRuns }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { message: string };
+          text = data.message;
+        }
+      } catch {
+        // Fall through to fallback
+      }
+
+      if (!text) {
+        const names = failedRuns.map((run) => run.name).join(", ");
+        text = `# Fix Failing Checks\n\nThe following checks are failing: ${names}. Please investigate and push a fix.`;
+      }
+
+      await sendMessageWithPendingState({ text });
+    },
+    [sendMessageWithPendingState, session.id],
+  );
+
+  const handleFixConflicts = useCallback(
+    async (baseBranchRef: string, closeMergeDialog = false) => {
+      if (closeMergeDialog) {
+        setMergeDialogOpen(false);
+      }
+
+      await sendMessageWithPendingState({
+        text: `# Resolve Merge Conflicts\n\nThere is a merge conflict with ${baseBranchRef}. Fetch and then fix the conflicts. Do not rebase.`,
+      });
+    },
+    [sendMessageWithPendingState],
   );
 
   const handleDeleteUserMessage = useCallback(
@@ -2620,6 +2667,39 @@ export function SessionChatContent({
   useEffect(() => {
     setChangesCount(totalChangesCount);
   }, [totalChangesCount, setChangesCount]);
+
+  const previousChangesCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    const previousChangesCount = previousChangesCountRef.current;
+    previousChangesCountRef.current = totalChangesCount;
+
+    if (totalChangesCount === 0) {
+      return;
+    }
+
+    if (previousChangesCount === totalChangesCount) {
+      return;
+    }
+
+    setGitPanelOpen(true);
+  }, [totalChangesCount, setGitPanelOpen]);
+
+  // Sync the "committed changes" indicator (blue dot) — branch has committed
+  // changes, no PR created yet, and no uncommitted changes to deal with
+  useEffect(() => {
+    setHasCommittedChanges(
+      hasRepo &&
+        totalChangesCount > 0 &&
+        !hasExistingPr &&
+        !hasUncommittedGitChanges,
+    );
+  }, [
+    hasRepo,
+    totalChangesCount,
+    hasExistingPr,
+    hasUncommittedGitChanges,
+    setHasCommittedChanges,
+  ]);
   const hasOpenPr = hasExistingPr && session.prStatus === "open";
   const canCloseAndArchive = hasOpenPr && !isArchived;
   const handleCommitted = useCallback(async () => {
@@ -2707,7 +2787,7 @@ export function SessionChatContent({
     [archiveSession, router, updateSessionPullRequest],
   );
 
-  const gitPanelElement = (
+  const gitPanelElement = gitPanelOpen ? (
     <GitPanel
       session={session}
       hasRepo={hasRepo}
@@ -2722,48 +2802,31 @@ export function SessionChatContent({
       canCloseAndArchive={canCloseAndArchive}
       diffFiles={diff?.files ?? null}
       diffSummary={diff?.summary ?? null}
+      diffRefreshing={diffRefreshing}
       onCreateRepoClick={() => setRepoDialogOpen(true)}
+      refreshDiff={refreshDiff}
       onMerged={handleMerged}
       onCloseAndArchiveClick={() => setCloseDialogOpen(true)}
-      onFixChecks={async (failedRuns) => {
-        let text = "";
-        try {
-          const res = await fetch(`/api/sessions/${session.id}/checks/fix`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ checkRuns: failedRuns }),
-          });
-          if (res.ok) {
-            const data = (await res.json()) as { message: string };
-            text = data.message;
-          }
-        } catch {
-          // Fall through to fallback
-        }
-
-        if (!text) {
-          const names = failedRuns.map((r) => r.name).join(", ");
-          text = `# Fix Failing Checks\n\nThe following checks are failing: ${names}. Please investigate and push a fix.`;
-        }
-
-        void sendMessageWithPendingState({ text });
-      }}
+      onFixChecks={handleFixChecks}
+      onFixConflicts={(baseBranchRef) => handleFixConflicts(baseBranchRef)}
       hasSandbox={sandboxInfo !== null}
       gitStatus={gitStatus}
+      gitStatusLoading={gitStatusLoading}
       refreshGitStatus={refreshGitStatus}
       onCommitted={handleCommitted}
-      isAgentWorking={isChatInFlight}
+      isAgentWorking={hasPendingResponse || isChatInFlight}
       onPrDetected={(pr) => {
         updateSessionPullRequest(pr);
         void refreshGitStatus().catch(() => {});
       }}
     />
-  );
+  ) : null;
 
   return (
     <>
       {/* Git panel portaled to layout-level for full page height */}
-      {panelPortalRef.current &&
+      {gitPanelOpen &&
+        panelPortalRef.current &&
         createPortal(gitPanelElement, panelPortalRef.current)}
 
       {/* Header actions portaled from chat-level state */}
@@ -2974,11 +3037,7 @@ export function SessionChatContent({
                             const renderGroups = (
                               isToolCallsExpanded: boolean,
                             ) =>
-                              groups.map((group, groupRenderIndex) => {
-                                const previousGroup =
-                                  groupRenderIndex > 0
-                                    ? groups[groupRenderIndex - 1]
-                                    : null;
+                              groups.map((group) => {
                                 if (group.type === "reasoning-group") {
                                   if (!isToolCallsExpanded) return null;
                                   const hasRenderableContentAfterGroup = m.parts
@@ -3290,10 +3349,6 @@ export function SessionChatContent({
                                   ) {
                                     return null;
                                   }
-                                  const followsUserTextPart =
-                                    m.role === "user" &&
-                                    previousGroup?.type === "part" &&
-                                    previousGroup.part.type === "text";
                                   return (
                                     <div
                                       key={`${m.id}-${group.renderKey}`}
@@ -3302,7 +3357,6 @@ export function SessionChatContent({
                                         m.role === "user"
                                           ? "justify-end"
                                           : "justify-start",
-                                        followsUserTextPart && "-mt-2",
                                       )}
                                     >
                                       <div className="group relative w-fit max-w-[80%]">
@@ -3363,7 +3417,11 @@ export function SessionChatContent({
                               );
                             }
 
-                            return renderGroups(true);
+                            return (
+                              <div key={m.id} className="flex flex-col gap-1">
+                                {renderGroups(true)}
+                              </div>
+                            );
                           },
                         )}
                         {showThinkingIndicator && (
@@ -3948,32 +4006,11 @@ export function SessionChatContent({
           isAgentWorking={hasPendingResponse || isChatInFlight}
           onFixChecks={async (failedRuns) => {
             setMergeDialogOpen(false);
-
-            let text = "";
-            try {
-              const res = await fetch(
-                `/api/sessions/${session.id}/checks/fix`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ checkRuns: failedRuns }),
-                },
-              );
-              if (res.ok) {
-                const data = (await res.json()) as { message: string };
-                text = data.message;
-              }
-            } catch {
-              // Fall through to fallback
-            }
-
-            if (!text) {
-              const names = failedRuns.map((r) => r.name).join(", ");
-              text = `# Fix Failing Checks\n\nThe following checks are failing: ${names}. Please investigate and push a fix.`;
-            }
-
-            void sendMessageWithPendingState({ text });
+            await handleFixChecks(failedRuns);
           }}
+          onFixConflicts={(baseBranchRef) =>
+            handleFixConflicts(baseBranchRef, true)
+          }
         />
       )}
 

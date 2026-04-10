@@ -1,6 +1,6 @@
 {
-  "id": "b086f25d-dc7f-4066-ab81-44db1f62a6fe",
-  "prevId": "f3021887-5c17-44fb-88fb-14b0b1feffe0",
+  "id": "7ad9454a-706e-46b1-a0b4-3145be7681ce",
+  "prevId": "b086f25d-dc7f-4066-ab81-44db1f62a6fe",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -720,6 +720,18 @@
         "lifecycle_error": {
           "name": "lifecycle_error",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sandbox_ensure_lease_id": {
+          "name": "sandbox_ensure_lease_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sandbox_ensure_lease_expires_at": {
+          "name": "sandbox_ensure_lease_expires_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
