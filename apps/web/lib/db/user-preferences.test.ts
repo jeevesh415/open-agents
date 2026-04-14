@@ -23,6 +23,7 @@ describe("toUserPreferencesData", () => {
       globalSkillRefs: [],
       modelVariants: [],
       enabledModelIds: [],
+      onboardingCompletedAt: null,
     });
   });
 
@@ -42,6 +43,7 @@ describe("toUserPreferencesData", () => {
       globalSkillRefs: [],
       modelVariants: [],
       enabledModelIds: [],
+      onboardingCompletedAt: null,
     });
 
     expect(result.defaultSandboxType).toBe("vercel");
@@ -64,6 +66,7 @@ describe("toUserPreferencesData", () => {
       globalSkillRefs: [],
       modelVariants: [],
       enabledModelIds: [],
+      onboardingCompletedAt: null,
     });
 
     expect(result.defaultSandboxType).toBe("vercel");
@@ -88,6 +91,7 @@ describe("toUserPreferencesData", () => {
       ] as never,
       modelVariants: [],
       enabledModelIds: [],
+      onboardingCompletedAt: null,
     });
 
     expect(result.globalSkillRefs).toEqual([]);
@@ -112,6 +116,7 @@ describe("toUserPreferencesData", () => {
       ],
       modelVariants: [],
       enabledModelIds: [],
+      onboardingCompletedAt: null,
     });
 
     expect(result.globalSkillRefs).toEqual([
@@ -135,6 +140,7 @@ describe("toUserPreferencesData", () => {
       globalSkillRefs: [],
       modelVariants: [{ id: "bad-id" }] as never,
       enabledModelIds: [],
+      onboardingCompletedAt: null,
     });
 
     expect(result.modelVariants).toEqual([]);
@@ -163,6 +169,7 @@ describe("toUserPreferencesData", () => {
         },
       ],
       enabledModelIds: [],
+      onboardingCompletedAt: null,
     });
 
     expect(result).toEqual({
@@ -185,6 +192,7 @@ describe("toUserPreferencesData", () => {
         },
       ],
       enabledModelIds: [],
+      onboardingCompletedAt: null,
     });
   });
 
@@ -204,6 +212,7 @@ describe("toUserPreferencesData", () => {
       globalSkillRefs: [],
       modelVariants: [],
       enabledModelIds: [],
+      onboardingCompletedAt: null,
     });
 
     expect(result.publicUsageEnabled).toBe(true);

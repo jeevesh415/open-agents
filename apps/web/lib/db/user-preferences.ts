@@ -24,6 +24,7 @@ export interface UserPreferencesData {
   globalSkillRefs: GlobalSkillRef[];
   modelVariants: ModelVariant[];
   enabledModelIds: string[];
+  onboardingCompletedAt: Date | null;
 }
 
 const DEFAULT_PREFERENCES: UserPreferencesData = {
@@ -39,6 +40,7 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   globalSkillRefs: [],
   modelVariants: [],
   enabledModelIds: [],
+  onboardingCompletedAt: null,
 };
 
 const VALID_SANDBOX_TYPES: SandboxType[] = ["vercel"];
@@ -92,6 +94,7 @@ export function toUserPreferencesData(
     | "globalSkillRefs"
     | "modelVariants"
     | "enabledModelIds"
+    | "onboardingCompletedAt"
   >,
 ): UserPreferencesData {
   const parsedModelVariants = modelVariantsSchema.safeParse(
@@ -113,6 +116,7 @@ export function toUserPreferencesData(
     globalSkillRefs: normalizeGlobalSkillRefs(row?.globalSkillRefs),
     modelVariants: parsedModelVariants.success ? parsedModelVariants.data : [],
     enabledModelIds: normalizeEnabledModelIds(row?.enabledModelIds),
+    onboardingCompletedAt: row?.onboardingCompletedAt ?? null,
   };
 }
 

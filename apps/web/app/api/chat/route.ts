@@ -13,6 +13,7 @@ import {
   updateSession,
 } from "@/lib/db/sessions";
 import { getUserPreferences } from "@/lib/db/user-preferences";
+import { getUserGatewayConfig } from "@/lib/vercel/gateway-key";
 import { getAllVariants } from "@/lib/model-variants";
 import { createCancelableReadableStream } from "@/lib/chat/create-cancelable-readable-stream";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
@@ -159,10 +160,15 @@ export async function POST(req: Request) {
     console.error("Failed to load user preferences:", error);
     return null;
   });
+  const gatewayConfigPromise = getUserGatewayConfig(userId).catch((error) => {
+    console.error("Failed to load gateway config:", error);
+    return null;
+  });
 
-  const [{ sandbox, skills }, preferences] = await Promise.all([
+  const [{ sandbox, skills }, preferences, gatewayConfig] = await Promise.all([
     runtimePromise,
     preferencesPromise,
+    gatewayConfigPromise,
   ]);
 
   const modelVariants = getAllVariants(preferences?.modelVariants ?? []);
@@ -210,6 +216,13 @@ export async function POST(req: Request) {
           : {}),
         ...(skills.length > 0 && { skills }),
         customInstructions: assistantFileLinkPrompt,
+        // Route AI Gateway calls through the user's selected team billing
+        ...(gatewayConfig && {
+          gatewayConfig: {
+            baseURL: "https://ai-gateway.vercel.sh/v1/ai",
+            apiKey: gatewayConfig.apiKey,
+          },
+        }),
       },
       ...(shouldAutoCommitPush &&
         sessionRecord.repoOwner &&
